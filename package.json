@@ -1,0 +1,30 @@
+{
+  "name": "workflow-orchestration-engine",
+  "version": "0.1.0",
+  "description": "Distributed workflow orchestration engine with DAG-based dependency resolution, Redis-backed queues, and Kubernetes workers",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "npx ts-node src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "ioredis": "^5.4",
+    "pg": "^8.12",
+    "express": "^4.19",
+    "uuid": "^9.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5",
+    "@types/node": "^20",
+    "@types/express": "^4.17",
+    "@types/pg": "^8.11",
+    "@types/uuid": "^9.0",
+    "jest": "^29.7",
+    "@types/jest": "^29.5",
+    "ts-jest": "^29.1",
+    "ts-node": "^10.9"
+  }
+}
