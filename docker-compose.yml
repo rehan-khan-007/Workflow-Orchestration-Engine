@@ -2,7 +2,7 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
   postgres:
     image: postgres:16
@@ -11,4 +11,4 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
     ports:
-      - "5432:5432"
+      - "5433:5432"

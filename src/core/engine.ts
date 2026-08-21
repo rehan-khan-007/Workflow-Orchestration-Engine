@@ -1,24 +1,24 @@
 import { Workflow, WorkflowStatus } from "../types";
+import { WorkflowRepository } from "../storage/workflowRepository";
 
 export class WorkflowEngine {
-  private workflows: Map<string, Workflow> = new Map();
+  constructor(private repo: WorkflowRepository = new WorkflowRepository()) {}
 
   async createWorkflow(name: string, steps: Workflow["steps"]): Promise<Workflow> {
     const workflow: Workflow = {
       id: crypto.randomUUID(),
       name,
-      steps,
+      steps: steps.map((s) => ({ ...s, status: s.status ?? "pending" })),
       status: "pending" as WorkflowStatus,
     };
-    this.workflows.set(workflow.id, workflow);
-    return workflow;
+    return this.repo.createWorkflow(workflow);
   }
 
   async getWorkflow(id: string): Promise<Workflow | undefined> {
-    return this.workflows.get(id);
+    return this.repo.getWorkflow(id);
   }
 
   async listWorkflows(): Promise<Workflow[]> {
-    return Array.from(this.workflows.values());
+    return this.repo.listWorkflows();
   }
 }
