@@ -60,7 +60,33 @@ npm test
       Deployment's replica count is the literal "N Kubernetes workers"
       from the resume; `kubectl scale deployment woe-worker --replicas=N`
       changes concurrency with no code change.
-- [ ] Phase 6 — Benchmarks
+- [x] Phase 6 — Benchmarks (`src/benchmarks/`): `npm run benchmark` runs
+      three real measurements against a live Postgres+Redis — throughput/
+      latency/utilization across a batch of synthetic DAG workflows,
+      parallel-vs-sequential speedup on the same workload, and recovery
+      rate across many injected worker crashes. Results below were
+      measured on a 2-vCPU sandbox VM — re-run locally for numbers that
+      reflect your own hardware before citing them anywhere.
+
+## Benchmark Results
+
+Measured 2026-08-21 (see `src/benchmarks/results.json` for raw output). Task
+duration simulated as 100–300ms per step (representative lightweight work,
+not artificially slow or fast) — these numbers measure orchestration
+overhead, not any particular task's business logic.
+
+| Metric | Result | Setup |
+|---|---|---|
+| Throughput | 1148 steps/minute | 120 workflows, 1032 total steps, 4 workers |
+| Avg queue latency | 11.5s (p95: 17.2s) | Same run — workers were ~96% utilized, i.e. saturated by design (120 workflows dispatched at once against only 4 workers) |
+| Worker utilization | 96.2% | — |
+| Speedup vs. sequential | 4.75× (78.9% latency reduction) | 30 workflows, same task durations, 4 workers |
+| Failure recovery | 100% within 10s (avg 4.27s, p95 4.56s) | 20 injected worker crashes (lease acquired, then abandoned — no heartbeat, no completion) |
+
+Reproduce with:
+```bash
+DATABASE_URL=... REDIS_URL=... npm run benchmark
+```
 
 ## Running with Docker Compose
 

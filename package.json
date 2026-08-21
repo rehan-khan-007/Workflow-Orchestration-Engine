@@ -11,6 +11,7 @@
     "start:api": "ts-node src/api/index.ts",
     "start:worker": "ts-node src/worker/main.ts",
     "cli": "ts-node scripts/cli.ts",
+    "benchmark": "ts-node src/benchmarks/report.ts",
     "test": "jest",
     "test:watch": "jest --watch"
   },

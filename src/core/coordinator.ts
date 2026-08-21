@@ -72,7 +72,10 @@ export class DagCoordinator {
     }
     await this.repo.updateStepStatus(workflowId, stepId, "running");
     await this.publishStep(workflowId, stepId, "running");
-    await this.producer.enqueue({ workflowId, stepId, attempt });
+    // dispatchedAt lets a worker (or a benchmark) compute exact queue
+    // wait time at pickup, without relying on any DB column — steps.updated_at
+    // gets overwritten again on completion, so it can't be used for this.
+    await this.producer.enqueue({ workflowId, stepId, attempt, dispatchedAt: Date.now() });
   }
 
   /** Kicks off a workflow: marks it running and dispatches every step with no unmet dependencies. */

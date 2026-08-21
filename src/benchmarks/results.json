@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-08-21T16:09:05.219Z",
+  "throughput": {
+    "workflowCount": 120,
+    "totalSteps": 1130,
+    "wallClockMs": 35965,
+    "stepsPerMinute": 1885.166133741137,
+    "avgQueueLatencyMs": 8778.024070021882,
+    "p95QueueLatencyMs": 18096,
+    "workerUtilizationPct": 63.313638259418866,
+    "workerCount": 4
+  },
+  "speedup": {
+    "sequentialMs": 55216,
+    "parallelMs": 9345,
+    "speedupFactor": 5.908614232209738,
+    "latencyReductionPct": 83.07555780933062,
+    "workloadCount": 30
+  },
+  "failureRecovery": {
+    "injectedFailures": 20,
+    "recoveredWithinThreshold": 20,
+    "recoveryRatePct": 100,
+    "avgRecoveryMs": 4331.95,
+    "p95RecoveryMs": 4556,
+    "thresholdMs": 10000
+  }
+}
