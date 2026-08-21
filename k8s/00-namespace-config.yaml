@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workflow-engine
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: woe-config
+  namespace: workflow-engine
+data:
+  DATABASE_URL: "postgresql://app:app@postgres:5432/workflow_engine"
+  REDIS_URL: "redis://redis:6379"
+  QUEUE_NAME: "workflow-steps"
+  PORT: "3000"
+  WORKER_POOL_SIZE: "4"

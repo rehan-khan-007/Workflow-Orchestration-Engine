@@ -52,5 +52,36 @@ npm test
       `POST /workflows/:id/cancel`, and `GET /workflows/:id/stream` (SSE,
       fed by Redis Pub/Sub for live step/workflow status updates). CLI:
       `npm run cli -- <create|list|get|cancel|watch> [arg]`.
-- [ ] Phase 5 — Docker + Kubernetes worker deployment
+- [x] Phase 5 — Docker + Kubernetes (`docker/Dockerfile`, `k8s/`): a
+      multi-stage Dockerfile builds separate `api` and `worker` images from
+      one build. `docker-compose.yml` runs the whole stack (Postgres,
+      Redis, migration job, API, 2 worker replicas) locally. `k8s/`
+      contains manifests for a local cluster (Minikube/Kind) — the worker
+      Deployment's replica count is the literal "N Kubernetes workers"
+      from the resume; `kubectl scale deployment woe-worker --replicas=N`
+      changes concurrency with no code change.
 - [ ] Phase 6 — Benchmarks
+
+## Running with Docker Compose
+
+```bash
+docker compose up --build
+curl -X POST http://localhost:3000/workflows \
+  -H "Content-Type: application/json" \
+  -d '{"name":"demo","steps":[{"id":"a","dependsOn":[],"status":"pending"}]}'
+```
+
+## Running on Kubernetes (Minikube)
+
+```bash
+minikube start
+eval $(minikube docker-env)   # point the docker CLI at Minikube's own daemon
+docker build --target api    -t woe-api:local    -f docker/Dockerfile .
+docker build --target worker -t woe-worker:local -f docker/Dockerfile .
+kubectl apply -f k8s/
+kubectl get pods -n workflow-engine -w    # wait for everything Running
+minikube service woe-api -n workflow-engine --url
+# then curl <that url>/workflows same as above
+
+kubectl scale deployment woe-worker -n workflow-engine --replicas=6   # more parallelism, no code change
+```

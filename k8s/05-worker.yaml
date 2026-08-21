@@ -1,0 +1,27 @@
+# The actual "Kubernetes workers" from the resume: N pods, each running an
+# independent WorkerPool (4 in-process workers apiece), all pulling from
+# the same Redis queue. Scaling parallelism is a `kubectl scale` away —
+# no code change needed, since dispatch was already built (Phase 2) to
+# not care how many consumers are listening.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woe-worker
+  namespace: workflow-engine
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: woe-worker
+  template:
+    metadata:
+      labels:
+        app: woe-worker
+    spec:
+      containers:
+        - name: worker
+          image: woe-worker:local
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: woe-config

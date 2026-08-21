@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: woe-migrate
+  namespace: workflow-engine
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: woe-api:local
+          imagePullPolicy: Never
+          command: ["node", "dist/storage/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: woe-config
