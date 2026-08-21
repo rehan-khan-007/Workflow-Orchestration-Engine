@@ -36,7 +36,10 @@ npm test
 
 - [x] Phase 1 — PostgreSQL persistence (`src/storage/`): workflows, steps, and
       idempotent step-execution tracking. Engine state is now durable, not in-memory.
-- [ ] Phase 2 — Real Redis-backed parallel scheduling
+- [x] Phase 2 — Real Redis-backed parallel scheduling (`src/core/coordinator.ts`,
+      `src/worker/pool.ts`): the scheduler enqueues all currently-runnable steps
+      at once; a pool of concurrent Redis consumers executes them in parallel;
+      completions trigger re-checking the DAG for newly-unblocked steps.
 - [ ] Phase 3 — Fault tolerance (leases, heartbeats, retries)
 - [ ] Phase 4 — REST API + CLI
 - [ ] Phase 5 — Docker + Kubernetes worker deployment
