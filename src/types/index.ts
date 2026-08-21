@@ -5,7 +5,7 @@ export interface Workflow {
   status: WorkflowStatus;
 }
 
-export type WorkflowStatus = "pending" | "running" | "completed" | "failed";
+export type WorkflowStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface Step {
   id: string;

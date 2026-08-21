@@ -45,6 +45,12 @@ npm test
       it periodically; a reaper detects steps whose lease expired without
       completion (a crashed worker) and retries them, up to a max-attempts
       limit, after which the step and workflow are permanently failed.
-- [ ] Phase 4 — REST API + CLI
+- [x] Phase 4 — REST API + CLI (`src/api/`, `scripts/cli.ts`): the API and
+      worker are separate processes talking only through Redis/Postgres —
+      run `npm run start:api` and `npm run start:worker` independently.
+      Endpoints: `POST /workflows`, `GET /workflows`, `GET /workflows/:id`,
+      `POST /workflows/:id/cancel`, and `GET /workflows/:id/stream` (SSE,
+      fed by Redis Pub/Sub for live step/workflow status updates). CLI:
+      `npm run cli -- <create|list|get|cancel|watch> [arg]`.
 - [ ] Phase 5 — Docker + Kubernetes worker deployment
 - [ ] Phase 6 — Benchmarks
