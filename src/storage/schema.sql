@@ -14,10 +14,13 @@ CREATE TABLE IF NOT EXISTS steps (
   step_id TEXT NOT NULL,
   depends_on JSONB NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'pending',
+  attempt_count INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (workflow_id, step_id)
 );
+
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS attempt_count INT NOT NULL DEFAULT 0;
 
 -- One row per attempt at executing a step. The unique constraint on
 -- (workflow_id, step_id, attempt_number) is the idempotency guard:

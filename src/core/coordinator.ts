@@ -2,20 +2,23 @@ import { Workflow, Step } from "../types";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { QueueProducer } from "../queue/producer";
 
+const DEFAULT_MAX_ATTEMPTS = 3;
+
 /**
  * Owns the DAG-aware dispatch logic: given a workflow's current state,
  * decides which steps are runnable right now, and reacts to a step's
  * completion by re-checking the DAG for newly-unblocked steps.
  *
- * This is what actually replaces the old scheduler's sequential
- * "await each step in topo order" loop with real concurrent dispatch —
- * multiple independent steps get enqueued together and picked up by
- * whichever worker is free.
+ * Also owns retry/attempt-limit logic, since a retry (triggered by the
+ * reaper after a worker crash) and a first dispatch are the same
+ * operation — "put this step on the queue" — just with a different
+ * trigger and a check against how many times it's already been tried.
  */
 export class DagCoordinator {
   constructor(
     private repo: WorkflowRepository,
-    private producer: QueueProducer
+    private producer: QueueProducer,
+    private maxAttempts: number = DEFAULT_MAX_ATTEMPTS
   ) {}
 
   private isReady(step: Step, all: Step[]): boolean {
@@ -25,7 +28,24 @@ export class DagCoordinator {
     );
   }
 
-  /** Kicks off a workflow: marks it running and enqueues every step with no unmet dependencies. */
+  /**
+   * Dispatches a single step: increments its attempt counter, and either
+   * enqueues it (attempts remaining) or permanently fails it and the
+   * workflow (attempts exhausted). Used for both first dispatch and
+   * reaper-triggered retries — they're the same operation.
+   */
+  private async dispatchStep(workflowId: string, stepId: string): Promise<void> {
+    const attempt = await this.repo.incrementAttempt(workflowId, stepId);
+    if (attempt > this.maxAttempts) {
+      await this.repo.updateStepStatus(workflowId, stepId, "failed");
+      await this.repo.updateWorkflowStatus(workflowId, "failed");
+      return;
+    }
+    await this.repo.updateStepStatus(workflowId, stepId, "running");
+    await this.producer.enqueue({ workflowId, stepId, attempt });
+  }
+
+  /** Kicks off a workflow: marks it running and dispatches every step with no unmet dependencies. */
   async start(workflow: Workflow): Promise<void> {
     if (workflow.steps.length === 0) {
       await this.repo.updateWorkflowStatus(workflow.id, "completed");
@@ -43,8 +63,7 @@ export class DagCoordinator {
     }
 
     for (const step of ready) {
-      await this.repo.updateStepStatus(workflow.id, step.id, "running");
-      await this.producer.enqueue({ workflowId: workflow.id, stepId: step.id });
+      await this.dispatchStep(workflow.id, step.id);
     }
   }
 
@@ -79,8 +98,17 @@ export class DagCoordinator {
 
     const newlyReady = workflow.steps.filter((s) => this.isReady(s, workflow.steps));
     for (const step of newlyReady) {
-      await this.repo.updateStepStatus(workflowId, step.id, "running");
-      await this.producer.enqueue({ workflowId, stepId: step.id });
+      await this.dispatchStep(workflowId, step.id);
     }
+  }
+
+  /**
+   * Called by the reaper when it detects a step marked "running" whose
+   * worker lease has expired — i.e. the worker that claimed it is
+   * presumed dead. Re-dispatches through the same attempt-limited path
+   * as a first dispatch.
+   */
+  async retryStep(workflowId: string, stepId: string): Promise<void> {
+    await this.dispatchStep(workflowId, stepId);
   }
 }

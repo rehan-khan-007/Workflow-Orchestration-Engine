@@ -89,6 +89,43 @@ export class WorkflowRepository {
   }
 
   /**
+   * Increments and returns the attempt counter for a step. Called every
+   * time a step is (re)dispatched, whether that's its first run or a
+   * retry after a worker crash. The returned number becomes the
+   * `attempt_number` used for the idempotency guard below.
+   */
+  async incrementAttempt(workflowId: string, stepId: string): Promise<number> {
+    const { rows } = await this.pool.query(
+      `UPDATE steps SET attempt_count = attempt_count + 1, updated_at = now()
+       WHERE workflow_id = $1 AND step_id = $2
+       RETURNING attempt_count`,
+      [workflowId, stepId]
+    );
+    return rows[0]?.attempt_count ?? 0;
+  }
+
+  /**
+   * All steps currently marked "running" across all workflows, along with
+   * how long ago they were last updated. Used by the reaper to find steps
+   * whose worker may have died — it cross-checks each against Redis lease
+   * keys, using updatedAtMs to avoid reaping a step that was *just*
+   * dispatched and hasn't had time to acquire its lease yet.
+   */
+  async listRunningSteps(): Promise<
+    { workflowId: string; stepId: string; updatedAtMs: number }[]
+  > {
+    const { rows } = await this.pool.query(
+      `SELECT workflow_id, step_id, EXTRACT(EPOCH FROM updated_at) * 1000 AS updated_at_ms
+       FROM steps WHERE status = 'running'`
+    );
+    return rows.map((r) => ({
+      workflowId: r.workflow_id,
+      stepId: r.step_id,
+      updatedAtMs: Number(r.updated_at_ms),
+    }));
+  }
+
+  /**
    * Records a new execution attempt for a step. Returns false instead of
    * throwing if this (workflowId, stepId, attemptNumber) was already
    * recorded — this is the idempotency guard a retrying worker checks
