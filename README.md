@@ -17,6 +17,27 @@ src/
 └── benchmarks/    — Throughput, latency, recovery benchmarks
 ```
 
+## Setup
+
+```bash
+# Start Redis + Postgres (see docker-compose.yml)
+docker compose up -d
+
+# Apply the schema
+npm run migrate
+
+# Run tests (requires Postgres running, see .env.example)
+npm test
+```
+
 ## Status
 
 🚧 Active development.
+
+- [x] Phase 1 — PostgreSQL persistence (`src/storage/`): workflows, steps, and
+      idempotent step-execution tracking. Engine state is now durable, not in-memory.
+- [ ] Phase 2 — Real Redis-backed parallel scheduling
+- [ ] Phase 3 — Fault tolerance (leases, heartbeats, retries)
+- [ ] Phase 4 — REST API + CLI
+- [ ] Phase 5 — Docker + Kubernetes worker deployment
+- [ ] Phase 6 — Benchmarks
