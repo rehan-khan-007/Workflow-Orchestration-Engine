@@ -40,7 +40,11 @@ npm test
       `src/worker/pool.ts`): the scheduler enqueues all currently-runnable steps
       at once; a pool of concurrent Redis consumers executes them in parallel;
       completions trigger re-checking the DAG for newly-unblocked steps.
-- [ ] Phase 3 — Fault tolerance (leases, heartbeats, retries)
+- [x] Phase 3 — Fault tolerance (`src/worker/leaseManager.ts`, `src/worker/reaper.ts`):
+      workers hold a Redis lease (with TTL) while executing a step and heartbeat
+      it periodically; a reaper detects steps whose lease expired without
+      completion (a crashed worker) and retries them, up to a max-attempts
+      limit, after which the step and workflow are permanently failed.
 - [ ] Phase 4 — REST API + CLI
 - [ ] Phase 5 — Docker + Kubernetes worker deployment
 - [ ] Phase 6 — Benchmarks

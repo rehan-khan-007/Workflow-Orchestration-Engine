@@ -34,7 +34,10 @@ describe("DagCoordinator + WorkerPool (Redis + Postgres backed)", () => {
   });
 
   afterEach(async () => {
-    if (pool) await pool.stop();
+    if (pool) {
+      await pool.stop();
+      pool = undefined as unknown as WorkerPool;
+    }
   });
 
   afterAll(async () => {
@@ -66,7 +69,7 @@ describe("DagCoordinator + WorkerPool (Redis + Postgres backed)", () => {
       overlapProof.push({ step: step.id, start, end: Date.now() });
     };
 
-    pool = new WorkerPool(queueName, coordinator, 4, trackingExecutor);
+    pool = new WorkerPool(queueName, coordinator, repo, 4, trackingExecutor);
     pool.start();
 
     const wf = await engine.createWorkflow("parallel-test", [
@@ -99,7 +102,7 @@ describe("DagCoordinator + WorkerPool (Redis + Postgres backed)", () => {
       if (step.id === "will-fail") throw new Error("simulated failure");
     };
 
-    pool = new WorkerPool(queueName, coordinator, 2, failingExecutor);
+    pool = new WorkerPool(queueName, coordinator, repo, 2, failingExecutor);
     pool.start();
 
     const wf = await engine.createWorkflow("failure-test", [
