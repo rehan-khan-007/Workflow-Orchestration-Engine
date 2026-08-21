@@ -1,56 +1,48 @@
-import { EventEmitter } from "events";
-import { Workflow, WorkflowStatus, Step } from "../types";
+import { QueueConsumer } from "../queue/consumer";
+import { DagCoordinator } from "../core/coordinator";
+import { StepExecutor, defaultStepExecutor } from "./runner";
 
-export class WorkerPool extends EventEmitter {
-  private workers: Map<string, { busy: boolean; id: string }> = new Map();
-  private maxWorkers: number;
+interface StepQueuePayload {
+  workflowId: string;
+  stepId: string;
+}
 
-  constructor(maxWorkers: number = 4) {
-    super();
-    this.maxWorkers = maxWorkers;
-    for (let i = 0; i < maxWorkers; i++) {
-      const id = `worker-${i + 1}`;
-      this.workers.set(id, { busy: false, id });
+/**
+ * A pool of `size` independent Redis consumers, all listening on the same
+ * queue. Redis's BRPOP hands each queued item to whichever consumer asks
+ * next, so N consumers running concurrently gives real parallel execution
+ * of independent steps — this replaces the old in-memory fake pool that
+ * just faked concurrency with setTimeout and never touched Redis.
+ */
+export class WorkerPool {
+  private consumers: QueueConsumer[] = [];
+
+  constructor(
+    private queueName: string,
+    private coordinator: DagCoordinator,
+    private size: number = 4,
+    private executor: StepExecutor = defaultStepExecutor
+  ) {}
+
+  start(): void {
+    for (let i = 0; i < this.size; i++) {
+      const consumer = new QueueConsumer(this.queueName);
+      // Fire-and-forget: start() runs its own internal loop until stop()/close().
+      consumer.start(async (payload) => {
+        const { workflowId, stepId } = payload as unknown as StepQueuePayload;
+        try {
+          await this.executor({ id: stepId, dependsOn: [], status: "running" });
+          await this.coordinator.handleStepResult(workflowId, stepId, true);
+        } catch {
+          await this.coordinator.handleStepResult(workflowId, stepId, false);
+        }
+      });
+      this.consumers.push(consumer);
     }
   }
 
-  async executeStep(step: Step, workflow: Workflow): Promise<void> {
-    const worker = this.assignWorker();
-    if (!worker) {
-      this.emit("queue_full", { step, workflow });
-      return;
-    }
-
-    this.emit("step_started", { step, worker: worker.id, workflow: workflow.id });
-    worker.busy = true;
-
-    try {
-      await this.runStep(step);
-      worker.busy = false;
-      this.emit("step_completed", { step, worker: worker.id });
-    } catch (err) {
-      worker.busy = false;
-      this.emit("step_failed", { step, worker: worker.id, error: (err as Error).message });
-    }
-  }
-
-  private async runStep(step: Step): Promise<void> {
-    // Simulate step execution — in production runs actual task logic
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
-  }
-
-  private assignWorker(): { busy: boolean; id: string } | null {
-    for (const worker of this.workers.values()) {
-      if (!worker.busy) return worker;
-    }
-    return null;
-  }
-
-  availableCount(): number {
-    return Array.from(this.workers.values()).filter((w) => !w.busy).length;
-  }
-
-  totalCount(): number {
-    return this.workers.size;
+  async stop(): Promise<void> {
+    await Promise.all(this.consumers.map((c) => c.close()));
+    this.consumers = [];
   }
 }
