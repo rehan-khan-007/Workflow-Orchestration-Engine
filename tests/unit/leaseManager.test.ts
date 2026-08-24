@@ -80,16 +80,29 @@ describe("LeaseManager (real Redis)", () => {
     expect(exists).toBe(false);
   }, 3000);
 
-  it("renew extends the lease past its original expiry", async () => {
+  it("renew extends the lease past its original expiry, when called by the owner", async () => {
     const { wf, step } = uniqueIds();
     await leases.acquire(wf, step, "worker-a", 400);
     await new Promise((r) => setTimeout(r, 250));
-    await leases.renew(wf, step, 400);
+    const renewed = await leases.renew(wf, step, "worker-a", 400);
+    expect(renewed).toBe(true);
     await new Promise((r) => setTimeout(r, 250));
     // Original TTL (400ms) would have expired by now (500ms elapsed),
     // but the renewal at 250ms should have pushed it further out.
     const exists = await leases.exists(wf, step);
     expect(exists).toBe(true);
+  }, 3000);
+
+  it("renew does not extend (or affect) a lease owned by a different worker", async () => {
+    const { wf, step } = uniqueIds();
+    await leases.acquire(wf, step, "worker-a", 300);
+    const renewed = await leases.renew(wf, step, "worker-b", 5000); // wrong owner
+    expect(renewed).toBe(false);
+    // The original (short) TTL should still apply — worker-b's renewal
+    // attempt must not have silently extended it.
+    await new Promise((r) => setTimeout(r, 500));
+    const exists = await leases.exists(wf, step);
+    expect(exists).toBe(false);
   }, 3000);
 
   it("leases for different steps are independent of each other", async () => {

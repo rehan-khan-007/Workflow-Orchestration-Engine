@@ -72,12 +72,23 @@ npm test
       nonexistent steps, self-dependencies, and dependency cycles are all
       rejected with a 400 and a specific error message, instead of being
       accepted and failing (or hanging) later during dispatch.
-- 70 automated tests across 9 files (`npm test`): unit tests for DAG
-      dispatch logic, lease acquisition/expiry, the crash-detection
-      reaper, and DAG validation (all fast, no DB/Redis needed except
-      where the component itself is Redis-backed); integration tests
-      exercising the real engine end-to-end through Postgres, Redis, and
-      real HTTP.
+- 75 automated tests across 9 files (`npm test`): unit tests for DAG
+      dispatch logic, lease acquisition/expiry/atomic renewal, the
+      crash-detection reaper, and DAG validation (all fast, no DB/Redis
+      needed except where the component itself is Redis-backed);
+      integration tests exercising the real engine end-to-end through
+      Postgres, Redis, and real HTTP.
+- [x] Phase 7 — Correctness hardening: an explicit `queued` state
+      (dispatched-but-not-yet-picked-up) distinct from `running`
+      (a worker is actively executing it) — `src/worker/pool.ts` marks
+      the transition the instant a worker actually acquires the lease.
+      Lease renewal (`src/worker/leaseManager.ts`) is now atomic and
+      owner-checked (a Lua script, not a bare `PEXPIRE`) — closes a real
+      race where a worker whose lease had already expired and been
+      reclaimed elsewhere could otherwise extend a lease it no longer
+      owned. Plus cancellation edge-case tests (cancelling a
+      not-yet-started or already-cancelled workflow) and a duplicate-
+      dispatch regression test.
 
 ## Benchmark Results
 

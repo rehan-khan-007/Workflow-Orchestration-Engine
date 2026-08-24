@@ -43,7 +43,7 @@ export class Reaper {
   }
 
   async sweep(): Promise<void> {
-    const running = await this.repo.listRunningSteps();
+    const running = await this.repo.listDispatchedSteps();
     const now = Date.now();
 
     for (const { workflowId, stepId, updatedAtMs } of running) {

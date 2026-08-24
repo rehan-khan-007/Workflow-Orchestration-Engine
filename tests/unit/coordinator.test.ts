@@ -302,7 +302,7 @@ describe("DagCoordinator (in-memory, no DB/Redis)", () => {
     expect(producer.enqueued).toHaveLength(0);
   });
 
-  it("start() marks workflow running before any step is dispatched", async () => {
+  it("start() marks the workflow running and dispatches its step as queued (not yet running)", async () => {
     const { repo, coordinator } = setup();
     const wf = makeWorkflow("wf1", [step("a")]);
     repo.seed(wf);
@@ -311,6 +311,59 @@ describe("DagCoordinator (in-memory, no DB/Redis)", () => {
 
     const finalWf = await repo.getWorkflow("wf1");
     expect(finalWf!.status).toBe("running");
-    expect(finalWf!.steps[0].status).toBe("running");
+    // "queued", not "running" — dispatch onto the queue and a worker
+    // actually picking it up are different moments; markRunning() is
+    // what transitions it further, and that's the worker pool's job.
+    expect(finalWf!.steps[0].status).toBe("queued");
+  });
+
+  it("markRunning() transitions a queued step to running", async () => {
+    const { repo, coordinator } = setup();
+    const wf = makeWorkflow("wf1", [step("a", [], "queued")], "running");
+    repo.seed(wf);
+
+    await coordinator.markRunning("wf1", "a");
+
+    expect((await repo.getWorkflow("wf1"))!.steps[0].status).toBe("running");
+  });
+
+  it("cancel() works on a workflow that hasn't been started yet (still pending)", async () => {
+    const { repo, coordinator } = setup();
+    const wf = makeWorkflow("wf1", [step("a")], "pending");
+    repo.seed(wf);
+
+    await coordinator.cancel("wf1");
+
+    expect((await repo.getWorkflow("wf1"))!.status).toBe("cancelled");
+  });
+
+  it("cancel() on an already-cancelled workflow is a harmless no-op", async () => {
+    const { repo, producer, coordinator } = setup();
+    const wf = makeWorkflow("wf1", [step("a")], "cancelled");
+    repo.seed(wf);
+
+    await coordinator.cancel("wf1");
+
+    expect((await repo.getWorkflow("wf1"))!.status).toBe("cancelled");
+    expect(producer.enqueued).toHaveLength(0);
+  });
+
+  it("a duplicate handleStepResult call for the same step does not double-dispatch its dependent", async () => {
+    // Regression test: if a step's completion were somehow reported
+    // twice (e.g. a duplicate message), the dependent step must only be
+    // dispatched once — the second call sees the dependent is no longer
+    // "pending" (already queued from the first call) and skips it.
+    const { repo, producer, coordinator } = setup();
+    const wf = makeWorkflow(
+      "wf1",
+      [step("a", [], "running"), step("b", ["a"], "pending")],
+      "running"
+    );
+    repo.seed(wf);
+
+    await coordinator.handleStepResult("wf1", "a", true);
+    await coordinator.handleStepResult("wf1", "a", true); // duplicate report
+
+    expect(producer.enqueued.filter((e) => e.stepId === "b")).toHaveLength(1);
   });
 });

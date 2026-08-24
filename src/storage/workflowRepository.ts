@@ -105,18 +105,21 @@ export class WorkflowRepository {
   }
 
   /**
-   * All steps currently marked "running" across all workflows, along with
-   * how long ago they were last updated. Used by the reaper to find steps
-   * whose worker may have died — it cross-checks each against Redis lease
-   * keys, using updatedAtMs to avoid reaping a step that was *just*
-   * dispatched and hasn't had time to acquire its lease yet.
+   * All steps currently marked "queued" or "running" across all
+   * workflows, along with how long ago they were last updated. Used by
+   * the reaper to find steps whose worker may have died — it
+   * cross-checks each against Redis lease keys, using updatedAtMs to
+   * avoid reaping a step that was *just* dispatched and hasn't had time
+   * to acquire its lease yet. Covers "queued" too, not just "running" —
+   * a worker can die before ever picking a dispatched item up, not only
+   * mid-execution.
    */
-  async listRunningSteps(): Promise<
+  async listDispatchedSteps(): Promise<
     { workflowId: string; stepId: string; updatedAtMs: number }[]
   > {
     const { rows } = await this.pool.query(
       `SELECT workflow_id, step_id, EXTRACT(EPOCH FROM updated_at) * 1000 AS updated_at_ms
-       FROM steps WHERE status = 'running'`
+       FROM steps WHERE status IN ('queued', 'running')`
     );
     return rows.map((r) => ({
       workflowId: r.workflow_id,

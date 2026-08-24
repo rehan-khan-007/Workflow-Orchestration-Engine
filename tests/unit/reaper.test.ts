@@ -5,7 +5,7 @@ import { DagCoordinator } from "../../src/core/coordinator";
 
 function makeMocks(runningSteps: { workflowId: string; stepId: string; updatedAtMs: number }[]) {
   const repo = {
-    listRunningSteps: jest.fn().mockResolvedValue(runningSteps),
+    listDispatchedSteps: jest.fn().mockResolvedValue(runningSteps),
   };
   const leases = {
     exists: jest.fn(),
