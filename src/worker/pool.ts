@@ -5,6 +5,7 @@ import { LeaseManager } from "./leaseManager";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { StepExecutor, defaultStepExecutor, withTimeout } from "./runner";
 import * as metrics from "../observability/metrics";
+import { log } from "../observability/logger";
 
 interface StepQueuePayload {
   workflowId: string;
@@ -88,6 +89,7 @@ export class WorkerPool {
         }
 
         await this.coordinator.markRunning(workflowId, stepId);
+        log({ event: "step_execution_started", workflowId, stepId, attempt, workerId });
 
         const heartbeat = setInterval(() => {
           this.leases.renew(workflowId, stepId, workerId, this.leaseTtlMs).catch(() => {});
@@ -101,8 +103,18 @@ export class WorkerPool {
           );
           clearInterval(heartbeat);
           await this.repo.completeExecutionAttempt(workflowId, stepId, attempt, "completed");
-          metrics.stepDurationSeconds.observe((Date.now() - busyStart) / 1000);
-          this.onTaskBusy?.(Date.now() - busyStart);
+          const durationMs = Date.now() - busyStart;
+          metrics.stepDurationSeconds.observe(durationMs / 1000);
+          log({
+            event: "step_execution_finished",
+            workflowId,
+            stepId,
+            attempt,
+            workerId,
+            durationMs,
+            result: "completed",
+          });
+          this.onTaskBusy?.(durationMs);
           await this.leases.release(workflowId, stepId, workerId);
           await this.coordinator.handleStepResult(workflowId, stepId, true);
         } catch (err) {
@@ -114,8 +126,19 @@ export class WorkerPool {
             "failed",
             (err as Error).message
           );
-          metrics.stepDurationSeconds.observe((Date.now() - busyStart) / 1000);
-          this.onTaskBusy?.(Date.now() - busyStart);
+          const durationMs = Date.now() - busyStart;
+          metrics.stepDurationSeconds.observe(durationMs / 1000);
+          log({
+            event: "step_execution_finished",
+            workflowId,
+            stepId,
+            attempt,
+            workerId,
+            durationMs,
+            result: "failed",
+            error: (err as Error).message,
+          });
+          this.onTaskBusy?.(durationMs);
           await this.leases.release(workflowId, stepId, workerId);
           await this.coordinator.handleStepResult(workflowId, stepId, false);
         }

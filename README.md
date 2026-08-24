@@ -112,6 +112,21 @@ npm test
       every scrape, not tracked incrementally in-process, so they can't
       drift from reality across multiple replicas). See "Observability"
       below for the two-endpoint scrape model this requires.
+- [x] Phase 9b — Structured JSON logging (`src/observability/logger.ts`):
+      one JSON object per line to stdout — the format every container
+      log aggregator (CloudWatch, Loki, Datadog, `kubectl logs | jq`)
+      already expects. Traces the workflow → step → attempt → worker →
+      result chain via events like `workflow_started`, `step_dispatched`,
+      `step_execution_started`/`_finished` (with `workerId` and
+      `durationMs`), `step_completed`/`_failed`, `dead_letter_recorded`,
+      `worker_crash_detected`, `workflow_completed`/`_failed`/
+      `_cancelled` — all carrying the same `workflowId`, so a real
+      incident can be traced with a single `grep` across both the API's
+      and every worker's logs. Suppressed under `NODE_ENV=test` to keep
+      the test suite's own output clean; verified with a real end-to-end
+      trace test (temporarily lifting the suppression) and a manual run
+      of the actual API + worker processes, not just asserted in
+      isolation.
 
 ## Observability
 

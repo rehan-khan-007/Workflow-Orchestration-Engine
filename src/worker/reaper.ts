@@ -2,6 +2,7 @@ import { WorkflowRepository } from "../storage/workflowRepository";
 import { LeaseManager } from "./leaseManager";
 import { DagCoordinator } from "../core/coordinator";
 import * as metrics from "../observability/metrics";
+import { log } from "../observability/logger";
 
 const DEFAULT_INTERVAL_MS = 1000;
 const DEFAULT_MIN_AGE_MS = 4000;
@@ -53,6 +54,7 @@ export class Reaper {
       const leaseHeld = await this.leases.exists(workflowId, stepId);
       if (!leaseHeld) {
         metrics.recoveryAttemptTotal.inc();
+        log({ event: "worker_crash_detected", workflowId, stepId, updatedAtMs });
         await this.coordinator.retryStep(workflowId, stepId);
       }
     }
