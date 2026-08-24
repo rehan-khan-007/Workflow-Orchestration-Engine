@@ -39,6 +39,10 @@ class FakeRepository {
     this.attempts.set(key, next);
     return next;
   }
+
+  getLastError = jest.fn().mockResolvedValue(undefined);
+  recordDeadLetter = jest.fn().mockResolvedValue(undefined);
+  getAttemptCount = jest.fn().mockResolvedValue(1);
 }
 
 /** Fake producer that just records what was enqueued, for assertions. */
@@ -57,13 +61,23 @@ function step(id: string, dependsOn: string[] = [], status: Step["status"] = "pe
   return { id, dependsOn, status };
 }
 
-function setup(maxAttempts = 3) {
+/**
+ * baseBackoffMs/maxBackoffMs default to 0 here — disabling retry backoff
+ * — so all these logic-focused tests behave synchronously (a retry
+ * dispatches immediately, same as before backoff existed). Backoff
+ * timing itself has its own dedicated tests below, using small nonzero
+ * delays there specifically.
+ */
+function setup(maxAttempts = 3, baseBackoffMs = 0, maxBackoffMs = 0) {
   const repo = new FakeRepository();
   const producer = new FakeProducer();
   const coordinator = new DagCoordinator(
     repo as unknown as WorkflowRepository,
     producer as unknown as QueueProducer,
-    maxAttempts
+    maxAttempts,
+    undefined,
+    baseBackoffMs,
+    maxBackoffMs
   );
   return { repo, producer, coordinator };
 }
@@ -199,7 +213,7 @@ describe("DagCoordinator (in-memory, no DB/Redis)", () => {
     expect(producer.enqueued).toHaveLength(0);
   });
 
-  it("permanently fails a step once its attempt count exceeds maxAttempts", async () => {
+  it("permanently fails a step once its attempt count exceeds maxAttempts, and records it as a dead letter", async () => {
     const { repo, producer, coordinator } = setup(2); // maxAttempts = 2
     const wf = makeWorkflow("wf1", [step("a")], "running");
     repo.seed(wf);
@@ -211,6 +225,7 @@ describe("DagCoordinator (in-memory, no DB/Redis)", () => {
     const finalWf = await repo.getWorkflow("wf1");
     expect(finalWf!.steps[0].status).toBe("failed");
     expect(finalWf!.status).toBe("failed");
+    expect(repo.recordDeadLetter).toHaveBeenCalledWith("wf1", "a", 2, undefined);
   });
 
   it("retryStep is a no-op on an already-cancelled workflow", async () => {
@@ -365,5 +380,44 @@ describe("DagCoordinator (in-memory, no DB/Redis)", () => {
     await coordinator.handleStepResult("wf1", "a", true); // duplicate report
 
     expect(producer.enqueued.filter((e) => e.stepId === "b")).toHaveLength(1);
+  });
+});
+
+describe("DagCoordinator retry backoff (real small delays, no DB/Redis)", () => {
+  it("a retry (attempt > 1) enters 'retrying' status immediately, then 'queued' only after the backoff delay elapses", async () => {
+    const { repo, producer, coordinator } = setup(3, 100, 100); // 100ms backoff
+    const wf = makeWorkflow("wf1", [step("a")], "running");
+    repo.seed(wf);
+
+    await coordinator.retryStep("wf1", "a"); // attempt 1, no backoff — immediate
+    expect((await repo.getWorkflow("wf1"))!.steps[0].status).toBe("queued");
+    expect(producer.enqueued).toHaveLength(1);
+
+    await coordinator.retryStep("wf1", "a"); // attempt 2 — this one backs off
+    // Right after the call returns, the step should be waiting, not
+    // re-enqueued yet — the backoff delay hasn't elapsed.
+    expect((await repo.getWorkflow("wf1"))!.steps[0].status).toBe("retrying");
+    expect(producer.enqueued).toHaveLength(1); // still just the first
+
+    await new Promise((r) => setTimeout(r, 200)); // past the 100ms delay
+
+    expect((await repo.getWorkflow("wf1"))!.steps[0].status).toBe("queued");
+    expect(producer.enqueued).toHaveLength(2);
+  });
+
+  it("a backoff-delayed retry does not re-enqueue into a workflow that was cancelled during the wait", async () => {
+    const { repo, producer, coordinator } = setup(3, 100, 100);
+    const wf = makeWorkflow("wf1", [step("a")], "running");
+    repo.seed(wf);
+
+    await coordinator.retryStep("wf1", "a"); // attempt 1, immediate
+    await coordinator.retryStep("wf1", "a"); // attempt 2, backs off 100ms
+
+    await coordinator.cancel("wf1"); // cancel while the retry is waiting
+
+    await new Promise((r) => setTimeout(r, 200)); // let the backoff timer fire
+
+    expect(producer.enqueued).toHaveLength(1); // only the first attempt ever went out
+    expect((await repo.getWorkflow("wf1"))!.status).toBe("cancelled");
   });
 });

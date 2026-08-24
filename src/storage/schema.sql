@@ -15,12 +15,14 @@ CREATE TABLE IF NOT EXISTS steps (
   depends_on JSONB NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'pending',
   attempt_count INT NOT NULL DEFAULT 0,
+  timeout_ms INT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (workflow_id, step_id)
 );
 
 ALTER TABLE steps ADD COLUMN IF NOT EXISTS attempt_count INT NOT NULL DEFAULT 0;
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS timeout_ms INT;
 
 -- One row per attempt at executing a step. The unique constraint on
 -- (workflow_id, step_id, attempt_number) is the idempotency guard:
@@ -42,3 +44,17 @@ CREATE TABLE IF NOT EXISTS step_executions (
 
 CREATE INDEX IF NOT EXISTS idx_steps_workflow ON steps(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_step_executions_workflow_step ON step_executions(workflow_id, step_id);
+
+-- A step lands here once it permanently fails (attempts exhausted),
+-- separately queryable from ordinary workflow state so an operator can
+-- find and inspect failed work without digging through every workflow.
+CREATE TABLE IF NOT EXISTS dead_letters (
+  id UUID PRIMARY KEY,
+  workflow_id UUID NOT NULL,
+  step_id TEXT NOT NULL,
+  attempt_count INT NOT NULL,
+  last_error TEXT,
+  failed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dead_letters_workflow ON dead_letters(workflow_id);

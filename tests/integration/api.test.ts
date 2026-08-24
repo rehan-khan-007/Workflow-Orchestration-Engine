@@ -33,12 +33,13 @@ describe("REST API (Redis + Postgres + real HTTP backed)", () => {
     eventBus = new EventBus();
     coordinator = new DagCoordinator(repo, producer, 3, eventBus);
     scheduler = new DagScheduler(coordinator);
-    pool = new WorkerPool(queueName, coordinator, repo, 3, async () => {
+    pool = new WorkerPool(queueName, coordinator, repo, 3, async (step) => {
+      if (step.id === "boom") throw new Error("simulated failure for dead-letter test");
       await new Promise((r) => setTimeout(r, 150));
     });
     pool.start();
 
-    const app = createApp(engine, scheduler, coordinator, eventBus);
+    const app = createApp(engine, scheduler, coordinator, eventBus, repo);
     server = app.listen(0);
     await new Promise<void>((resolve) => server.once("listening", resolve));
     const { port } = server.address() as AddressInfo;
@@ -152,6 +153,29 @@ describe("REST API (Redis + Postgres + real HTTP backed)", () => {
   it("returns 404 for a workflow that doesn't exist", async () => {
     const res = await fetch(`${baseUrl}/workflows/does-not-exist`);
     expect(res.status).toBe(404);
+  });
+
+  it("lists permanently failed steps via GET /dead-letters", async () => {
+    const created = await (
+      await fetch(`${baseUrl}/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "dead-letter-api-test",
+          steps: [{ id: "boom", dependsOn: [], status: "pending" }],
+        }),
+      })
+    ).json() as any;
+
+    await waitForStatus(created.id, "failed");
+
+    const res = await fetch(`${baseUrl}/dead-letters`);
+    expect(res.status).toBe(200);
+    const deadLetters = (await res.json()) as any[];
+    const entry = deadLetters.find(
+      (d) => d.workflowId === created.id && d.stepId === "boom"
+    );
+    expect(entry).toBeDefined();
   });
 
   it("lists workflows via GET /workflows", async () => {

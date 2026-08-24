@@ -89,6 +89,22 @@ npm test
       owned. Plus cancellation edge-case tests (cancelling a
       not-yet-started or already-cancelled workflow) and a duplicate-
       dispatch regression test.
+- [x] Phase 8 — Reliability: crash-triggered retries (the reaper's path)
+      now back off exponentially (`src/core/coordinator.ts`) — a new
+      `retrying` status distinguishes "waiting out a backoff delay" from
+      "queued and ready to run." Scoped deliberately to crash recovery
+      only, not task-level failures (a crash is transient infra trouble
+      worth retrying; a task's own thrown error might mean a side effect
+      already happened, so it fails permanently instead). Steps can
+      specify `timeoutMs`; a step whose executor doesn't resolve in time
+      is treated as failed (`src/worker/runner.ts`'s `withTimeout` — a
+      documented best-effort limitation: Node can't truly cancel an
+      in-flight Promise). Permanently-failed steps are now recorded to a
+      `dead_letters` table, queryable via `GET /dead-letters`, whether
+      they failed via exhausted retries or an immediate task error.
+      Restart recovery — a crashed step being recoverable by entirely
+      fresh process instances with no shared in-memory state — is now an
+      explicit, passing integration test rather than an unverified claim.
 
 ## Benchmark Results
 

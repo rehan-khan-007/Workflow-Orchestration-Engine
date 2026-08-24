@@ -3,6 +3,7 @@ import { WorkflowEngine } from "../core/engine";
 import { DagCoordinator } from "../core/coordinator";
 import { DagScheduler } from "../scheduler/scheduler";
 import { EventBus, WorkflowEvent } from "../queue/eventBus";
+import { WorkflowRepository } from "../storage/workflowRepository";
 import { Step, Workflow } from "../types";
 
 type AsyncHandler = (req: Request, res: Response) => Promise<void>;
@@ -27,7 +28,8 @@ export function createApp(
   engine: WorkflowEngine,
   scheduler: DagScheduler,
   coordinator: DagCoordinator,
-  eventBus: EventBus
+  eventBus: EventBus,
+  repo: WorkflowRepository
 ): Express {
   const app = express();
   app.use(express.json());
@@ -93,6 +95,14 @@ export function createApp(
     asyncRoute(async (_req, res) => {
       const workflows = await engine.listWorkflows();
       res.json(workflows);
+    })
+  );
+
+  app.get(
+    "/dead-letters",
+    asyncRoute(async (_req, res) => {
+      const deadLetters = await repo.listDeadLetters();
+      res.json(deadLetters);
     })
   );
 
