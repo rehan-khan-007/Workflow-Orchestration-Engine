@@ -134,6 +134,26 @@ npm test
       everything else. See "Worker-scaling experiment" under Benchmark
       Results below for the actual measured numbers — near-linear up to
       8 workers on this hardware.
+- [x] Phase 11 — API key authentication + rate limiting
+      (`src/api/auth.ts`): every route except `GET /metrics` requires a
+      matching `Authorization: Bearer <API_KEY>` header — but only if
+      `API_KEY` is actually set. Left unset (the default), auth is fully
+      disabled, so local dev/demo usage is unchanged. Rate limiting
+      (`express-rate-limit`) caps requests per IP (100/minute by
+      default), also exempting `/metrics` since Prometheus scrapes it
+      frequently from trusted infra. Verified against the real running
+      API process, not just in tests.
+
+## Authentication
+
+Disabled by default — set `API_KEY` (on the API process) to require it:
+```bash
+API_KEY=your-secret-here npm run start:api
+curl http://localhost:3000/workflows -H "Authorization: Bearer your-secret-here"
+```
+`GET /metrics` is always exempt (Prometheus scrapers don't send app-level
+auth headers by default). Rate limiting is always on regardless of
+`API_KEY` (100 requests/minute per IP by default).
 
 ## Observability
 

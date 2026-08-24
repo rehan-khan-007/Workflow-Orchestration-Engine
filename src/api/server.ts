@@ -1,10 +1,12 @@
 import express, { Express, NextFunction, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { WorkflowEngine } from "../core/engine";
 import { DagCoordinator } from "../core/coordinator";
 import { DagScheduler } from "../scheduler/scheduler";
 import { EventBus, WorkflowEvent } from "../queue/eventBus";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { renderMetrics } from "../observability/metrics";
+import { requireApiKey } from "./auth";
 import { Step, Workflow } from "../types";
 
 type AsyncHandler = (req: Request, res: Response) => Promise<void>;
@@ -30,10 +32,35 @@ export function createApp(
   scheduler: DagScheduler,
   coordinator: DagCoordinator,
   eventBus: EventBus,
-  repo: WorkflowRepository
+  repo: WorkflowRepository,
+  apiKey?: string,
+  rateLimitOptions?: { windowMs: number; max: number }
 ): Express {
   const app = express();
   app.use(express.json());
+
+  // /metrics is deliberately outside both auth and rate limiting —
+  // Prometheus scrapers hit it frequently and don't send app-level auth
+  // headers by default; access to it is a network/infra concern, not
+  // something this app-level middleware should gate.
+  app.get(
+    "/metrics",
+    asyncRoute(async (_req, res) => {
+      const { contentType, body } = await renderMetrics();
+      res.set("Content-Type", contentType);
+      res.send(body);
+    })
+  );
+
+  const limiter = rateLimit({
+    windowMs: rateLimitOptions?.windowMs ?? 60_000,
+    max: rateLimitOptions?.max ?? 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." },
+  });
+  app.use(limiter);
+  app.use(requireApiKey(apiKey));
 
   /**
    * Looks up a workflow by id, treating any lookup failure — including
@@ -96,15 +123,6 @@ export function createApp(
     asyncRoute(async (_req, res) => {
       const workflows = await engine.listWorkflows();
       res.json(workflows);
-    })
-  );
-
-  app.get(
-    "/metrics",
-    asyncRoute(async (_req, res) => {
-      const { contentType, body } = await renderMetrics();
-      res.set("Content-Type", contentType);
-      res.send(body);
     })
   );
 

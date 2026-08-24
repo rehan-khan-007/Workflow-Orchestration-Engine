@@ -12,3 +12,11 @@ export const WORKER_POOL_SIZE = Number(process.env.WORKER_POOL_SIZE) || 4;
 // metrics independently (its counters live in its own process memory,
 // separate from the API's — see src/observability/metrics.ts).
 export const WORKER_METRICS_PORT = Number(process.env.WORKER_METRICS_PORT) || 9100;
+// Optional: if set, the API requires every request to carry a matching
+// `Authorization: Bearer <API_KEY>` header. Left unset, auth is disabled
+// entirely — the local dev/demo experience (curl straight into the API,
+// no header needed) keeps working exactly as before. This is a
+// deliberate default: an internal orchestration tool run locally or in
+// a trusted cluster network doesn't need auth forced on by default the
+// way a public-facing multi-tenant service would.
+export const API_KEY = process.env.API_KEY;
