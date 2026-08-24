@@ -127,6 +127,13 @@ npm test
       trace test (temporarily lifting the suppression) and a manual run
       of the actual API + worker processes, not just asserted in
       isolation.
+- [x] Phase 10 — Worker-scaling benchmark (`src/benchmarks/scalingExperiment.ts`,
+      `npm run benchmark:scaling`): the same fixed workload run at 1, 2,
+      4, and 8 workers, isolating the effect of worker count on
+      throughput and latency (p50/p95/p99, not just an average) from
+      everything else. See "Worker-scaling experiment" under Benchmark
+      Results below for the actual measured numbers — near-linear up to
+      8 workers on this hardware.
 
 ## Observability
 
@@ -169,6 +176,29 @@ overhead, not any particular task's business logic.
 Reproduce with:
 ```bash
 DATABASE_URL=... REDIS_URL=... npm run benchmark
+```
+
+### Worker-scaling experiment
+
+Measured 2026-08-24 (see `src/benchmarks/scaling-results.json` for raw
+output). The exact same fixed workload (60 workflows, same 100–300ms task
+duration distribution) run four times, varying only the worker count —
+this isolates the effect of worker count from everything else, unlike a
+single throughput number at one fixed worker count.
+
+| Workers | Throughput/min | Speedup | p50 latency | p95 latency | p99 latency | Utilization |
+|---|---|---|---|---|---|---|
+| 1 | 290 | 1.0× | 25.8s | 36.1s | 37.3s | 97.2% |
+| 2 | 579 | 2.0× | 12.1s | 17.6s | 18.3s | 97.7% |
+| 4 | 1150 | 3.97× | 5.5s | 8.7s | 8.9s | 96.5% |
+| 8 | 2274 | 7.84× | 2.7s | 4.3s | 4.4s | 94.6% |
+
+Near-linear: doubling worker count roughly doubles throughput and halves
+latency, all the way to 8 workers, with utilization staying above 94%
+throughout — the system isn't yet bottlenecked by Postgres/Redis at this
+scale. Reproduce with:
+```bash
+DATABASE_URL=... REDIS_URL=... npm run benchmark:scaling
 ```
 
 ## Running with Docker Compose

@@ -13,7 +13,9 @@ export interface ThroughputResult {
   wallClockMs: number;
   stepsPerMinute: number;
   avgQueueLatencyMs: number;
+  p50QueueLatencyMs: number;
   p95QueueLatencyMs: number;
+  p99QueueLatencyMs: number;
   workerUtilizationPct: number;
   workerCount: number;
 }
@@ -90,7 +92,10 @@ export async function runThroughputBenchmark(
   const latencies = [...queueLatencies].sort((a, b) => a - b);
   const avgQueueLatencyMs =
     latencies.reduce((sum, v) => sum + v, 0) / (latencies.length || 1);
-  const p95QueueLatencyMs = latencies[Math.floor(latencies.length * 0.95)] ?? 0;
+  const percentile = (p: number) => latencies[Math.floor(latencies.length * p)] ?? 0;
+  const p50QueueLatencyMs = percentile(0.5);
+  const p95QueueLatencyMs = percentile(0.95);
+  const p99QueueLatencyMs = percentile(0.99);
 
   // Worker utilization: total busy-time across all step executions,
   // divided by total available worker-time (workerCount * wall clock).
@@ -111,7 +116,9 @@ export async function runThroughputBenchmark(
     wallClockMs,
     stepsPerMinute,
     avgQueueLatencyMs,
+    p50QueueLatencyMs,
     p95QueueLatencyMs,
+    p99QueueLatencyMs,
     workerUtilizationPct,
     workerCount,
   };

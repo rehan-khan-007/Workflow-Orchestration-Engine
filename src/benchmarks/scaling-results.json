@@ -1,0 +1,53 @@
+{
+  "generatedAt": "2026-08-24T20:16:04.751Z",
+  "results": [
+    {
+      "workflowCount": 60,
+      "totalSteps": 523,
+      "wallClockMs": 112694,
+      "stepsPerMinute": 278.4531563348537,
+      "avgQueueLatencyMs": 24515.502868068834,
+      "p50QueueLatencyMs": 25249,
+      "p95QueueLatencyMs": 37314,
+      "p99QueueLatencyMs": 37626,
+      "workerUtilizationPct": 95.72026904715423,
+      "workerCount": 1
+    },
+    {
+      "workflowCount": 60,
+      "totalSteps": 523,
+      "wallClockMs": 56934,
+      "stepsPerMinute": 551.1645062704183,
+      "avgQueueLatencyMs": 11952.632075471698,
+      "p50QueueLatencyMs": 12691,
+      "p95QueueLatencyMs": 17559,
+      "p99QueueLatencyMs": 17915,
+      "workerUtilizationPct": 95.89700354796783,
+      "workerCount": 2
+    },
+    {
+      "workflowCount": 60,
+      "totalSteps": 528,
+      "wallClockMs": 28382,
+      "stepsPerMinute": 1116.2004087097457,
+      "avgQueueLatencyMs": 5776.935606060606,
+      "p50QueueLatencyMs": 5911,
+      "p95QueueLatencyMs": 8718,
+      "p99QueueLatencyMs": 9065,
+      "workerUtilizationPct": 95.45222324008174,
+      "workerCount": 4
+    },
+    {
+      "workflowCount": 60,
+      "totalSteps": 565,
+      "wallClockMs": 14783,
+      "stepsPerMinute": 2293.174592437259,
+      "avgQueueLatencyMs": 2906.3174603174602,
+      "p50QueueLatencyMs": 3028,
+      "p95QueueLatencyMs": 4097,
+      "p99QueueLatencyMs": 4484,
+      "workerUtilizationPct": 95.2732868835825,
+      "workerCount": 8
+    }
+  ]
+}
