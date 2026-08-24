@@ -14,7 +14,7 @@ const eventBus = new EventBus();
 const coordinator = new DagCoordinator(repo, producer, 3, eventBus);
 const scheduler = new DagScheduler(coordinator);
 
-const app = createApp(engine, scheduler, coordinator, eventBus);
+const app = createApp(engine, scheduler, coordinator, eventBus, repo);
 
 const server = app.listen(API_PORT, () => {
   console.log(`API listening on port ${API_PORT} (queue: ${QUEUE_NAME})`);

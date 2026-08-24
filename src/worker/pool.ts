@@ -3,13 +3,14 @@ import { QueueConsumer } from "../queue/consumer";
 import { DagCoordinator } from "../core/coordinator";
 import { LeaseManager } from "./leaseManager";
 import { WorkflowRepository } from "../storage/workflowRepository";
-import { StepExecutor, defaultStepExecutor } from "./runner";
+import { StepExecutor, defaultStepExecutor, withTimeout } from "./runner";
 
 interface StepQueuePayload {
   workflowId: string;
   stepId: string;
   attempt: number;
   dispatchedAt?: number;
+  timeoutMs?: number;
 }
 
 const DEFAULT_LEASE_TTL_MS = 5000;
@@ -57,7 +58,7 @@ export class WorkerPool {
       const consumer = new QueueConsumer(this.queueName);
       // Fire-and-forget: start() runs its own internal loop until stop()/close().
       consumer.start(async (payload) => {
-        const { workflowId, stepId, attempt, dispatchedAt } =
+        const { workflowId, stepId, attempt, dispatchedAt, timeoutMs } =
           payload as unknown as StepQueuePayload;
 
         if (this.onQueueLatency && dispatchedAt) {
@@ -93,7 +94,10 @@ export class WorkerPool {
 
         const busyStart = Date.now();
         try {
-          await this.executor({ id: stepId, dependsOn: [], status: "running" });
+          await withTimeout(
+            this.executor({ id: stepId, dependsOn: [], status: "running", timeoutMs }),
+            timeoutMs
+          );
           clearInterval(heartbeat);
           await this.repo.completeExecutionAttempt(workflowId, stepId, attempt, "completed");
           this.onTaskBusy?.(Date.now() - busyStart);

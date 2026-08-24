@@ -17,9 +17,9 @@ export class WorkflowRepository {
       );
       for (const step of workflow.steps) {
         await client.query(
-          `INSERT INTO steps (workflow_id, step_id, depends_on, status)
-           VALUES ($1, $2, $3, $4)`,
-          [workflow.id, step.id, JSON.stringify(step.dependsOn), step.status]
+          `INSERT INTO steps (workflow_id, step_id, depends_on, status, timeout_ms)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workflow.id, step.id, JSON.stringify(step.dependsOn), step.status, step.timeoutMs ?? null]
         );
       }
       await client.query("COMMIT");
@@ -40,7 +40,7 @@ export class WorkflowRepository {
     if (wfResult.rows.length === 0) return undefined;
 
     const stepsResult = await this.pool.query(
-      `SELECT step_id, depends_on, status FROM steps WHERE workflow_id = $1 ORDER BY step_id`,
+      `SELECT step_id, depends_on, status, timeout_ms FROM steps WHERE workflow_id = $1 ORDER BY step_id`,
       [id]
     );
 
@@ -53,6 +53,7 @@ export class WorkflowRepository {
         id: s.step_id,
         dependsOn: s.depends_on as string[],
         status: s.status as StepStatus,
+        timeoutMs: s.timeout_ms ?? undefined,
       })),
     };
   }
@@ -167,5 +168,65 @@ export class WorkflowRepository {
        WHERE workflow_id = $3 AND step_id = $4 AND attempt_number = $5`,
       [status, error ?? null, workflowId, stepId, attemptNumber]
     );
+  }
+
+  /** The current attempt count for a step, e.g. for dead-letter records created outside dispatchStep's own increment. */
+  async getAttemptCount(workflowId: string, stepId: string): Promise<number> {
+    const { rows } = await this.pool.query(
+      `SELECT attempt_count FROM steps WHERE workflow_id = $1 AND step_id = $2`,
+      [workflowId, stepId]
+    );
+    return rows[0]?.attempt_count ?? 0;
+  }
+
+  /** The error message from the most recent execution attempt of a step, if any. */
+  async getLastError(workflowId: string, stepId: string): Promise<string | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT error FROM step_executions
+       WHERE workflow_id = $1 AND step_id = $2 AND error IS NOT NULL
+       ORDER BY attempt_number DESC LIMIT 1`,
+      [workflowId, stepId]
+    );
+    return rows[0]?.error ?? undefined;
+  }
+
+  /**
+   * Records a step that has permanently failed (exhausted its retry
+   * attempts) into a separately queryable table, so an operator can find
+   * and inspect failed work without scanning every workflow's status.
+   */
+  async recordDeadLetter(
+    workflowId: string,
+    stepId: string,
+    attemptCount: number,
+    lastError?: string
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO dead_letters (id, workflow_id, step_id, attempt_count, last_error)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [crypto.randomUUID(), workflowId, stepId, attemptCount, lastError ?? null]
+    );
+  }
+
+  async listDeadLetters(): Promise<
+    {
+      workflowId: string;
+      stepId: string;
+      attemptCount: number;
+      lastError: string | null;
+      failedAt: string;
+    }[]
+  > {
+    const { rows } = await this.pool.query(
+      `SELECT workflow_id, step_id, attempt_count, last_error, failed_at
+       FROM dead_letters ORDER BY failed_at DESC`
+    );
+    return rows.map((r) => ({
+      workflowId: r.workflow_id,
+      stepId: r.step_id,
+      attemptCount: r.attempt_count,
+      lastError: r.last_error,
+      failedAt: r.failed_at,
+    }));
   }
 }
