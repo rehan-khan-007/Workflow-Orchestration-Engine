@@ -3,6 +3,7 @@ import { WorkflowRepository } from "../storage/workflowRepository";
 import { QueueProducer } from "../queue/producer";
 import { EventBus } from "../queue/eventBus";
 import * as metrics from "../observability/metrics";
+import { log } from "../observability/logger";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_BACKOFF_MS = 200;
@@ -77,10 +78,13 @@ export class DagCoordinator {
       if (status === "cancelled") metrics.workflowCancelledTotal.inc();
 
       const createdAt = await this.repo.getWorkflowCreatedAt(workflowId);
+      let durationMs: number | undefined;
       if (createdAt) {
         const seconds = (Date.now() - new Date(createdAt).getTime()) / 1000;
         metrics.workflowDurationSeconds.observe(seconds);
+        durationMs = Math.round(seconds * 1000);
       }
+      log({ event: `workflow_${status}`, workflowId, durationMs });
     }
   }
 
@@ -105,6 +109,13 @@ export class DagCoordinator {
       await this.repo.recordDeadLetter(workflowId, stepId, attempt - 1, lastError);
       metrics.deadLetterTotal.inc();
       metrics.stepFailedTotal.inc();
+      log({
+        event: "dead_letter_recorded",
+        workflowId,
+        stepId,
+        attempt: attempt - 1,
+        error: lastError,
+      });
       await this.repo.updateStepStatus(workflowId, stepId, "failed");
       await this.publishStep(workflowId, stepId, "failed");
       await this.setWorkflowStatus(workflowId, "failed");
@@ -124,6 +135,7 @@ export class DagCoordinator {
       // separate poller, which is a bigger feature than this pass.
       await this.repo.updateStepStatus(workflowId, stepId, "retrying");
       await this.publishStep(workflowId, stepId, "retrying");
+      log({ event: "step_retry_scheduled", workflowId, stepId, attempt, backoffDelayMs: delayMs });
       setTimeout(() => {
         this.enqueueStep(workflowId, stepId, attempt).catch(() => {});
       }, delayMs);
@@ -154,6 +166,7 @@ export class DagCoordinator {
     await this.publishStep(workflowId, stepId, "queued");
     metrics.stepDispatchedTotal.inc();
     if (attempt > 1) metrics.stepRetryTotal.inc();
+    log({ event: "step_dispatched", workflowId, stepId, attempt });
     // dispatchedAt lets a worker (or a benchmark) compute exact queue
     // wait time at pickup, without relying on any DB column — steps.updated_at
     // gets overwritten again on completion, so it can't be used for this.
@@ -174,6 +187,7 @@ export class DagCoordinator {
   /** Kicks off a workflow: marks it running and dispatches every step with no unmet dependencies. */
   async start(workflow: Workflow): Promise<void> {
     metrics.workflowStartedTotal.inc();
+    log({ event: "workflow_started", workflowId: workflow.id, stepCount: workflow.steps.length });
 
     if (workflow.steps.length === 0) {
       await this.setWorkflowStatus(workflow.id, "completed");
@@ -212,6 +226,7 @@ export class DagCoordinator {
     } else {
       metrics.stepFailedTotal.inc();
     }
+    log({ event: success ? "step_completed" : "step_failed", workflowId, stepId });
 
     if (!success) {
       // A task's own logic failing (as opposed to a crash — that path
@@ -225,6 +240,7 @@ export class DagCoordinator {
       ]);
       await this.repo.recordDeadLetter(workflowId, stepId, attemptCount, lastError);
       metrics.deadLetterTotal.inc();
+      log({ event: "dead_letter_recorded", workflowId, stepId, attempt: attemptCount, error: lastError });
     }
 
     const workflow = await this.repo.getWorkflow(workflowId);
