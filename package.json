@@ -12,6 +12,7 @@
     "start:worker": "ts-node src/worker/main.ts",
     "cli": "ts-node scripts/cli.ts",
     "benchmark": "ts-node src/benchmarks/report.ts",
+    "benchmark:scaling": "ts-node src/benchmarks/scalingExperiment.ts",
     "test": "jest",
     "test:watch": "jest --watch"
   },
