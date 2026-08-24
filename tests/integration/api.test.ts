@@ -155,6 +155,55 @@ describe("REST API (Redis + Postgres + real HTTP backed)", () => {
     expect(res.status).toBe(404);
   });
 
+  // Note on scope: this test suite constructs one shared DagCoordinator
+  // for both dispatch (as the API would) and the WorkerPool (as a
+  // worker process would), all within this single Jest process — so
+  // every counter lands in the same registry regardless of which
+  // "role" incremented it. That's enough to prove the /metrics endpoint
+  // itself is wired correctly and the format is real Prometheus text,
+  // but it does NOT exercise the real deployment's split (API process
+  // vs. worker process, each with its own registry — see
+  // src/worker/main.ts's comment and the README's Observability
+  // section). That split was verified manually against the actual
+  // separate processes, not by an automated test here.
+  it("exposes Prometheus-format metrics via GET /metrics, with real non-zero values after activity", async () => {
+    // Drive at least one real workflow through first, so the counters
+    // below are asserting genuine activity, not just that the metric
+    // names exist in the output with a value of 0.
+    const created = await (
+      await fetch(`${baseUrl}/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "metrics-activity-test",
+          steps: [{ id: "a", dependsOn: [], status: "pending" }],
+        }),
+      })
+    ).json() as any;
+    await waitForStatus(created.id, "completed");
+
+    const res = await fetch(`${baseUrl}/metrics`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    const body = await res.text();
+
+    expect(body).toMatch(/^workflow_started_total \d/m);
+    expect(body).toMatch(/^queue_depth \d/m);
+    expect(body).toMatch(/^workflows_running \d/m);
+
+    const startedMatch = body.match(/^workflow_started_total (\d+)/m);
+    expect(Number(startedMatch![1])).toBeGreaterThan(0);
+
+    const dispatchedMatch = body.match(/^step_dispatched_total (\d+)/m);
+    expect(Number(dispatchedMatch![1])).toBeGreaterThan(0);
+
+    const completedMatch = body.match(/^step_completed_total (\d+)/m);
+    expect(Number(completedMatch![1])).toBeGreaterThan(0);
+
+    const durationMatch = body.match(/^workflow_duration_seconds_count (\d+)/m);
+    expect(Number(durationMatch![1])).toBeGreaterThan(0);
+  });
+
   it("lists permanently failed steps via GET /dead-letters", async () => {
     const created = await (
       await fetch(`${baseUrl}/workflows`, {

@@ -2,6 +2,7 @@ import { Workflow, Step } from "../types";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { QueueProducer } from "../queue/producer";
 import { EventBus } from "../queue/eventBus";
+import * as metrics from "../observability/metrics";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_BACKOFF_MS = 200;
@@ -69,6 +70,18 @@ export class DagCoordinator {
   private async setWorkflowStatus(workflowId: string, status: Workflow["status"]): Promise<void> {
     await this.repo.updateWorkflowStatus(workflowId, status);
     await this.publishWorkflow(workflowId, status);
+
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      if (status === "completed") metrics.workflowCompletedTotal.inc();
+      if (status === "failed") metrics.workflowFailedTotal.inc();
+      if (status === "cancelled") metrics.workflowCancelledTotal.inc();
+
+      const createdAt = await this.repo.getWorkflowCreatedAt(workflowId);
+      if (createdAt) {
+        const seconds = (Date.now() - new Date(createdAt).getTime()) / 1000;
+        metrics.workflowDurationSeconds.observe(seconds);
+      }
+    }
   }
 
   /** Exponential backoff: 0 for a first attempt, doubling from baseBackoffMs on each retry, capped at maxBackoffMs. */
@@ -90,6 +103,8 @@ export class DagCoordinator {
     if (attempt > this.maxAttempts) {
       const lastError = await this.repo.getLastError(workflowId, stepId);
       await this.repo.recordDeadLetter(workflowId, stepId, attempt - 1, lastError);
+      metrics.deadLetterTotal.inc();
+      metrics.stepFailedTotal.inc();
       await this.repo.updateStepStatus(workflowId, stepId, "failed");
       await this.publishStep(workflowId, stepId, "failed");
       await this.setWorkflowStatus(workflowId, "failed");
@@ -137,6 +152,8 @@ export class DagCoordinator {
 
     await this.repo.updateStepStatus(workflowId, stepId, "queued");
     await this.publishStep(workflowId, stepId, "queued");
+    metrics.stepDispatchedTotal.inc();
+    if (attempt > 1) metrics.stepRetryTotal.inc();
     // dispatchedAt lets a worker (or a benchmark) compute exact queue
     // wait time at pickup, without relying on any DB column — steps.updated_at
     // gets overwritten again on completion, so it can't be used for this.
@@ -156,6 +173,8 @@ export class DagCoordinator {
 
   /** Kicks off a workflow: marks it running and dispatches every step with no unmet dependencies. */
   async start(workflow: Workflow): Promise<void> {
+    metrics.workflowStartedTotal.inc();
+
     if (workflow.steps.length === 0) {
       await this.setWorkflowStatus(workflow.id, "completed");
       return;
@@ -188,6 +207,11 @@ export class DagCoordinator {
       success ? "completed" : "failed"
     );
     await this.publishStep(workflowId, stepId, success ? "completed" : "failed");
+    if (success) {
+      metrics.stepCompletedTotal.inc();
+    } else {
+      metrics.stepFailedTotal.inc();
+    }
 
     if (!success) {
       // A task's own logic failing (as opposed to a crash — that path
@@ -200,6 +224,7 @@ export class DagCoordinator {
         this.repo.getAttemptCount(workflowId, stepId),
       ]);
       await this.repo.recordDeadLetter(workflowId, stepId, attemptCount, lastError);
+      metrics.deadLetterTotal.inc();
     }
 
     const workflow = await this.repo.getWorkflow(workflowId);
