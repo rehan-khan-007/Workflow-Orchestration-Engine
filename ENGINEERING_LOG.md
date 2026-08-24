@@ -9,11 +9,11 @@ re-verified against a live Postgres + Redis before being committed.
 
 ## Scale, for context
 
-- 1,597 lines of source code across 25 files
-- 1,290 lines of test code — 70 tests, all passing, across 9 test files
-- 13 commits taking the project from an in-memory skeleton to a
+- 2,206 lines of source code across 29 files
+- 2,161 lines of test code — 102 tests, all passing, across 14 test files
+- 11 phases taking the project from an in-memory skeleton to a
   Postgres-backed, Redis-parallel, fault-tolerant, containerized,
-  Kubernetes-deployed, benchmarked system
+  Kubernetes-deployed, benchmarked, observable, authenticated system
 
 ## Bugs found and fixed
 
@@ -126,10 +126,71 @@ per-process state) when the second run started.
 globally unique regardless of process boundaries. Verified with 6 rapid
 back-to-back runs, all clean.
 
+### 7. Dead-letter table missing a whole class of permanent failures
+
+**Symptom:** `GET /dead-letters` correctly showed steps that failed
+after exhausting all retries — but a step whose *first* attempt threw a
+real error (not a crash) never showed up there at all, despite the
+workflow itself correctly ending up `failed`.
+
+**Cause:** `recordDeadLetter()` was only ever called from
+`dispatchStep()`'s attempts-exhausted branch — the path a *crash-then-
+retry* failure takes. A task's own thrown error is deliberately treated
+as immediately permanent (not retried at all, since a thrown error might
+mean a side effect already happened), which routes through a completely
+different code path (`handleStepResult()`) that never called
+`recordDeadLetter()` at all.
+
+**Fix:** Call `recordDeadLetter()` from both places — retry exhaustion
+*and* an immediate task-level failure — each attaching the real
+attempt count and error message from Postgres.
+
+### 8. A test's own healthy worker pool "stealing" and succeeding a step meant to fail
+
+**Symptom:** A test asserting a workflow ends up `failed` after an
+always-throwing executor instead asserted `completed` — the workflow
+actually *succeeded*, despite every task genuinely throwing.
+
+**Cause:** The test's dedicated failing `WorkerPool` and an earlier
+test's still-running healthy `WorkerPool` were both listening on the
+*same* Redis queue name. Whichever pool's worker happened to `BRPOP` the
+item first won the race — and the healthy pool usually won, executing
+the step successfully with its own (working) executor instead of the
+one the test intended to exercise.
+
+**Fix:** Give the test its own dedicated queue name (and its own
+producer/coordinator/scheduler bound to it), so nothing else can ever
+compete for its items.
+
+### 9. Closing a shared database connection pool mid-test-file, silently 500-ing every later test
+
+**Symptom:** In a new test file with three separate `describe` blocks,
+the first block's tests all passed — but every test in the second and
+third blocks failed with an unexpected `500`, even for the simplest
+possible request (`GET /workflows` with no auth needed at all).
+
+**Cause:** `WorkflowRepository` (and everything built on it) shares one
+module-level Postgres connection pool (`getPool()` in `src/storage/db.ts`)
+for the lifetime of the process — by design, so many components don't
+each open their own connections. The first `describe` block's `afterAll`
+called `closePool()`, correctly cleaning up *if it were the last thing
+in the file* — but Jest runs all three `describe` blocks in the same
+process, sequentially, so closing the pool after the first one killed
+the database connection for the second and third blocks' entire test
+run.
+
+**Fix:** Only call `closePool()` once, in the very last `describe`
+block's `afterAll` for the whole file — never in an individual block
+that isn't actually the end of the file's test run.
+
 ## What this adds up to
 
 None of these were caught by writing more tests in the abstract — every
 one was found by actually running the system against real Postgres,
 real Redis, and (for #2, #3, #5) a real Docker container, and taking a
 "received: X, expected: Y" mismatch seriously enough to trace it to a
-real cause instead of loosening the assertion.
+real cause instead of loosening the assertion. #8 and #9 are a useful
+reminder that this applies to test infrastructure itself, not just
+application code — a test that silently exercises the wrong code path,
+or fails for a reason unrelated to what it's actually checking, is its
+own kind of bug.
