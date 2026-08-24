@@ -4,7 +4,7 @@ import { DagScheduler } from "../scheduler/scheduler";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { QueueProducer } from "../queue/producer";
 import { EventBus } from "../queue/eventBus";
-import { QUEUE_NAME, API_PORT } from "../config";
+import { QUEUE_NAME, API_PORT, API_KEY } from "../config";
 import { createApp } from "./server";
 
 const repo = new WorkflowRepository();
@@ -14,7 +14,10 @@ const eventBus = new EventBus();
 const coordinator = new DagCoordinator(repo, producer, 3, eventBus);
 const scheduler = new DagScheduler(coordinator);
 
-const app = createApp(engine, scheduler, coordinator, eventBus, repo);
+const app = createApp(engine, scheduler, coordinator, eventBus, repo, API_KEY);
+if (!API_KEY) {
+  console.log("API_KEY not set — running without authentication (local/dev default).");
+}
 // This process's own GET /metrics (wired inside createApp) reliably
 // shows workflow_started_total for every workflow, but NOT most
 // completed/failed/duration counters — those get incremented wherever
