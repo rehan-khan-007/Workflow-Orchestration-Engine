@@ -32,7 +32,10 @@ npm test
 
 ## Status
 
-🚧 Active development.
+All 11 planned phases complete — persistence, real parallel execution,
+fault tolerance, a REST API + CLI, containerized + Kubernetes deployment,
+measured benchmarks (including worker-scaling), observability (metrics +
+structured logs), and auth + rate limiting.
 
 - [x] Phase 1 — PostgreSQL persistence (`src/storage/`): workflows, steps, and
       idempotent step-execution tracking. Engine state is now durable, not in-memory.
@@ -72,12 +75,14 @@ npm test
       nonexistent steps, self-dependencies, and dependency cycles are all
       rejected with a 400 and a specific error message, instead of being
       accepted and failing (or hanging) later during dispatch.
-- 75 automated tests across 9 files (`npm test`): unit tests for DAG
+- 102 automated tests across 14 files (`npm test`): unit tests for DAG
       dispatch logic, lease acquisition/expiry/atomic renewal, the
-      crash-detection reaper, and DAG validation (all fast, no DB/Redis
-      needed except where the component itself is Redis-backed);
-      integration tests exercising the real engine end-to-end through
-      Postgres, Redis, and real HTTP.
+      crash-detection reaper, DAG validation, and the structured logger
+      (all fast, no DB/Redis needed except where the component itself is
+      Redis-backed); integration tests exercising the real engine
+      end-to-end through Postgres, Redis, and real HTTP — including a
+      real end-to-end structured-logging trace and API-key/rate-limit
+      behavior against a real running server.
 - [x] Phase 7 — Correctness hardening: an explicit `queued` state
       (dispatched-but-not-yet-picked-up) distinct from `running`
       (a worker is actively executing it) — `src/worker/pool.ts` marks
@@ -244,6 +249,28 @@ minikube service woe-api -n workflow-engine --url
 
 kubectl scale deployment woe-worker -n workflow-engine --replicas=6   # more parallelism, no code change
 ```
+
+## Known limitations / not yet done
+
+Kept here deliberately rather than left implicit — an honest "what's
+next" list is more credible than a README that implies everything is
+covered:
+
+- **Workflow-level timeout doesn't exist** — only step-level (`timeoutMs`
+  per step). A workflow with no overall time bound can run indefinitely
+  if individual steps keep succeeding slowly.
+- **Recovery after a Postgres/Redis restart is untested**, as distinct
+  from what Phase 8 actually proved (recovery via entirely fresh
+  *application* processes against a still-running database). Restarting
+  the database/queue containers themselves and confirming recovery was
+  never done.
+- **No worker-health gauges** (e.g. `worker_active`/`worker_idle`) in
+  `src/observability/metrics.ts` — queue depth and workflow counts are
+  covered, but not per-worker liveness.
+- **Benchmark numbers are single-run**, not averaged with variance
+  (mean/stddev) across repeated runs of the same experiment.
+- **The CLI (`scripts/cli.ts`) hasn't been revisited** since Phase 4 —
+  functional, but not polished.
 
 ## Engineering log
 
