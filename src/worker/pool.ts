@@ -85,8 +85,10 @@ export class WorkerPool {
           return;
         }
 
+        await this.coordinator.markRunning(workflowId, stepId);
+
         const heartbeat = setInterval(() => {
-          this.leases.renew(workflowId, stepId, this.leaseTtlMs).catch(() => {});
+          this.leases.renew(workflowId, stepId, workerId, this.leaseTtlMs).catch(() => {});
         }, this.heartbeatIntervalMs);
 
         const busyStart = Date.now();

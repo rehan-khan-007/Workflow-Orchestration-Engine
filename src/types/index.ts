@@ -13,5 +13,5 @@ export interface Step {
   status: StepStatus;
 }
 
-export type StepStatus = "pending" | "running" | "completed" | "failed";
+export type StepStatus = "pending" | "queued" | "running" | "completed" | "failed";
 

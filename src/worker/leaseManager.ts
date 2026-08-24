@@ -35,9 +35,31 @@ export class LeaseManager {
     return result === "OK";
   }
 
-  /** Extends the lease's TTL. Only the owning worker should call this (heartbeat). */
-  async renew(workflowId: string, stepId: string, ttlMs: number): Promise<void> {
-    await this.redis.pexpire(this.key(workflowId, stepId), ttlMs);
+  /**
+   * Extends the lease's TTL — but only if this worker still owns it.
+   * Atomic (a single Lua script, not a separate GET then PEXPIRE) to
+   * close a real race: without this check, a worker whose lease already
+   * expired and was reclaimed by a different worker (retrying the same
+   * step after presumed abandonment) could renew what is now someone
+   * else's lease, artificially extending a stale claim. Returns false if
+   * the caller no longer owns the lease — callers can use that to notice
+   * they've lost ownership mid-execution.
+   */
+  async renew(
+    workflowId: string,
+    stepId: string,
+    workerId: string,
+    ttlMs: number
+  ): Promise<boolean> {
+    const script = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("pexpire", KEYS[1], ARGV[2])
+      else
+        return 0
+      end
+    `;
+    const result = await this.redis.eval(script, 1, this.key(workflowId, stepId), workerId, ttlMs);
+    return result === 1;
   }
 
   /** Releases the lease, only if it's still held (avoids deleting a lease someone else just acquired). */

@@ -70,12 +70,27 @@ export class DagCoordinator {
       await this.setWorkflowStatus(workflowId, "failed");
       return;
     }
-    await this.repo.updateStepStatus(workflowId, stepId, "running");
-    await this.publishStep(workflowId, stepId, "running");
+    // "queued": dispatched onto the Redis queue, but not yet picked up
+    // by a worker. WorkerPool transitions it to "running" once a worker
+    // actually acquires the lease and starts executing — that
+    // distinction matters for observability (queue depth vs. active work).
+    await this.repo.updateStepStatus(workflowId, stepId, "queued");
+    await this.publishStep(workflowId, stepId, "queued");
     // dispatchedAt lets a worker (or a benchmark) compute exact queue
     // wait time at pickup, without relying on any DB column — steps.updated_at
     // gets overwritten again on completion, so it can't be used for this.
     await this.producer.enqueue({ workflowId, stepId, attempt, dispatchedAt: Date.now() });
+  }
+
+  /**
+   * Called by a worker the instant it actually starts executing a step
+   * (lease acquired, execution attempt recorded) — transitions the step
+   * from "queued" (dispatched, waiting) to "running" (actively being
+   * worked on).
+   */
+  async markRunning(workflowId: string, stepId: string): Promise<void> {
+    await this.repo.updateStepStatus(workflowId, stepId, "running");
+    await this.publishStep(workflowId, stepId, "running");
   }
 
   /** Kicks off a workflow: marks it running and dispatches every step with no unmet dependencies. */
@@ -127,7 +142,7 @@ export class DagCoordinator {
     }
 
     const stillOutstanding = workflow.steps.some(
-      (s) => s.status === "pending" || s.status === "running"
+      (s) => s.status === "pending" || s.status === "queued" || s.status === "running"
     );
     if (!stillOutstanding) {
       await this.setWorkflowStatus(workflowId, "completed");
