@@ -122,3 +122,9 @@ minikube service woe-api -n workflow-engine --url
 
 kubectl scale deployment woe-worker -n workflow-engine --replicas=6   # more parallelism, no code change
 ```
+
+## Engineering log
+
+[ENGINEERING_LOG.md](./ENGINEERING_LOG.md) — real bugs found while
+building this (and how they were actually diagnosed and fixed), plus
+scale stats for the codebase.
