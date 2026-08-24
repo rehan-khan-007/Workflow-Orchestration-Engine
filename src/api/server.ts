@@ -4,6 +4,7 @@ import { DagCoordinator } from "../core/coordinator";
 import { DagScheduler } from "../scheduler/scheduler";
 import { EventBus, WorkflowEvent } from "../queue/eventBus";
 import { WorkflowRepository } from "../storage/workflowRepository";
+import { renderMetrics } from "../observability/metrics";
 import { Step, Workflow } from "../types";
 
 type AsyncHandler = (req: Request, res: Response) => Promise<void>;
@@ -95,6 +96,15 @@ export function createApp(
     asyncRoute(async (_req, res) => {
       const workflows = await engine.listWorkflows();
       res.json(workflows);
+    })
+  );
+
+  app.get(
+    "/metrics",
+    asyncRoute(async (_req, res) => {
+      const { contentType, body } = await renderMetrics();
+      res.set("Content-Type", contentType);
+      res.send(body);
     })
   );
 

@@ -43,6 +43,7 @@ class FakeRepository {
   getLastError = jest.fn().mockResolvedValue(undefined);
   recordDeadLetter = jest.fn().mockResolvedValue(undefined);
   getAttemptCount = jest.fn().mockResolvedValue(1);
+  getWorkflowCreatedAt = jest.fn().mockResolvedValue(new Date());
 }
 
 /** Fake producer that just records what was enqueued, for assertions. */

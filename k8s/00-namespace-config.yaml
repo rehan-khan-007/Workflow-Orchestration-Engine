@@ -14,3 +14,4 @@ data:
   QUEUE_NAME: "workflow-steps"
   PORT: "3000"
   WORKER_POOL_SIZE: "4"
+  WORKER_METRICS_PORT: "9100"

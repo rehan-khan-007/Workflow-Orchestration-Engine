@@ -4,6 +4,7 @@ import { DagCoordinator } from "../core/coordinator";
 import { LeaseManager } from "./leaseManager";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { StepExecutor, defaultStepExecutor, withTimeout } from "./runner";
+import * as metrics from "../observability/metrics";
 
 interface StepQueuePayload {
   workflowId: string;
@@ -100,6 +101,7 @@ export class WorkerPool {
           );
           clearInterval(heartbeat);
           await this.repo.completeExecutionAttempt(workflowId, stepId, attempt, "completed");
+          metrics.stepDurationSeconds.observe((Date.now() - busyStart) / 1000);
           this.onTaskBusy?.(Date.now() - busyStart);
           await this.leases.release(workflowId, stepId, workerId);
           await this.coordinator.handleStepResult(workflowId, stepId, true);
@@ -112,6 +114,7 @@ export class WorkerPool {
             "failed",
             (err as Error).message
           );
+          metrics.stepDurationSeconds.observe((Date.now() - busyStart) / 1000);
           this.onTaskBusy?.(Date.now() - busyStart);
           await this.leases.release(workflowId, stepId, workerId);
           await this.coordinator.handleStepResult(workflowId, stepId, false);

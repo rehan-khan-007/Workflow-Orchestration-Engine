@@ -105,6 +105,36 @@ npm test
       Restart recovery — a crashed step being recoverable by entirely
       fresh process instances with no shared in-memory state — is now an
       explicit, passing integration test rather than an unverified claim.
+- [x] Phase 9a — Prometheus metrics (`src/observability/metrics.ts`):
+      counters for workflow/step lifecycle events, histograms for
+      workflow/step duration, and gauges for queue depth and workflows
+      currently running (the gauges are computed live from Postgres on
+      every scrape, not tracked incrementally in-process, so they can't
+      drift from reality across multiple replicas). See "Observability"
+      below for the two-endpoint scrape model this requires.
+
+## Observability
+
+Metrics are split across **two** endpoints, deliberately — this is standard
+practice for a multi-process/multi-replica deployment, not a workaround:
+
+- **API process** — `GET :3000/metrics` (or whatever `PORT` is set to).
+  Reliably shows `workflow_started_total` for every workflow. Does **not**
+  reliably show most `workflow_completed_total`/`workflow_failed_total`/
+  `workflow_duration_seconds` — those get incremented wherever
+  `handleStepResult()` actually executes, which for any workflow that runs
+  real steps is the *worker* process, not the API process.
+- **Worker process** — `GET :9100/metrics` (`WORKER_METRICS_PORT`, one
+  per replica). Shows step-level counters (`step_dispatched_total`,
+  `step_completed_total`, `step_failed_total`, `step_duration_seconds`,
+  `recovery_attempt_total`) and, for the normal case, the workflow-level
+  completion counters and duration too.
+
+A real Prometheus deployment should scrape **both** targets (every worker
+replica individually, plus the API), then aggregate with PromQL
+(`sum by (job) (...)`) rather than expecting either single endpoint to
+hold the complete picture — this is exactly how Prometheus is meant to be
+used against any multi-process system, not specific to this project.
 
 ## Benchmark Results
 

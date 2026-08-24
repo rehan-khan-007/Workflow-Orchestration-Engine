@@ -170,6 +170,15 @@ export class WorkflowRepository {
     );
   }
 
+  /** A workflow's creation timestamp — used only to compute workflow_duration_seconds when it reaches a terminal state. */
+  async getWorkflowCreatedAt(id: string): Promise<Date | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT created_at FROM workflows WHERE id = $1`,
+      [id]
+    );
+    return rows[0]?.created_at;
+  }
+
   /** The current attempt count for a step, e.g. for dead-letter records created outside dispatchStep's own increment. */
   async getAttemptCount(workflowId: string, stepId: string): Promise<number> {
     const { rows } = await this.pool.query(
