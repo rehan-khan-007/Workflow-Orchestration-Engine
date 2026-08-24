@@ -101,6 +101,54 @@ describe("REST API (Redis + Postgres + real HTTP backed)", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects a workflow with duplicate step ids with 400", async () => {
+    const res = await fetch(`${baseUrl}/workflows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "dup-ids",
+        steps: [
+          { id: "a", dependsOn: [], status: "pending" },
+          { id: "a", dependsOn: [], status: "pending" },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error).toMatch(/duplicate/i);
+  });
+
+  it("rejects a workflow with a dangling dependency reference with 400", async () => {
+    const res = await fetch(`${baseUrl}/workflows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "dangling-dep",
+        steps: [{ id: "a", dependsOn: ["ghost"], status: "pending" }],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error).toMatch(/unknown step/i);
+  });
+
+  it("rejects a workflow containing a dependency cycle with 400", async () => {
+    const res = await fetch(`${baseUrl}/workflows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "cyclic",
+        steps: [
+          { id: "a", dependsOn: ["b"], status: "pending" },
+          { id: "b", dependsOn: ["a"], status: "pending" },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error).toMatch(/cycle/i);
+  });
+
   it("returns 404 for a workflow that doesn't exist", async () => {
     const res = await fetch(`${baseUrl}/workflows/does-not-exist`);
     expect(res.status).toBe(404);

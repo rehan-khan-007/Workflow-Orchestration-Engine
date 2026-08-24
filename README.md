@@ -65,8 +65,19 @@ npm test
       latency/utilization across a batch of synthetic DAG workflows,
       parallel-vs-sequential speedup on the same workload, and recovery
       rate across many injected worker crashes. Results below were
-      measured on a 2-vCPU sandbox VM — re-run locally for numbers that
-      reflect your own hardware before citing them anywhere.
+      measured locally — re-run with `npm run benchmark` for numbers
+      that reflect your own hardware before citing them anywhere.
+- [x] DAG validation (`src/core/validation.ts`): workflow submissions are
+      checked at creation time — duplicate step ids, dependencies on
+      nonexistent steps, self-dependencies, and dependency cycles are all
+      rejected with a 400 and a specific error message, instead of being
+      accepted and failing (or hanging) later during dispatch.
+- 70 automated tests across 9 files (`npm test`): unit tests for DAG
+      dispatch logic, lease acquisition/expiry, the crash-detection
+      reaper, and DAG validation (all fast, no DB/Redis needed except
+      where the component itself is Redis-backed); integration tests
+      exercising the real engine end-to-end through Postgres, Redis, and
+      real HTTP.
 
 ## Benchmark Results
 

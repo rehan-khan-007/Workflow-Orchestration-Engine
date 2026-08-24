@@ -51,6 +51,25 @@ export function createApp(
     return workflow;
   }
 
+  /**
+   * Creates a workflow, translating a DAG validation failure (duplicate
+   * step id, dangling dependency, cycle, etc — thrown by
+   * WorkflowEngine.createWorkflow) into a 400 instead of letting it fall
+   * through to the generic 500 handler.
+   */
+  async function createWorkflowOr400(
+    name: string,
+    steps: Step[],
+    res: Response
+  ): Promise<Workflow | undefined> {
+    try {
+      return await engine.createWorkflow(name, steps);
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+      return undefined;
+    }
+  }
+
   app.post(
     "/workflows",
     asyncRoute(async (req, res) => {
@@ -61,7 +80,8 @@ export function createApp(
           .json({ error: "Request body must include 'name' (string) and 'steps' (array)." });
         return;
       }
-      const workflow = await engine.createWorkflow(name, steps);
+      const workflow = await createWorkflowOr400(name, steps, res);
+      if (!workflow) return;
       await scheduler.schedule(workflow);
       const started = await engine.getWorkflow(workflow.id);
       res.status(201).json(started);
