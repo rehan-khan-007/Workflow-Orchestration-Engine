@@ -7,6 +7,7 @@ import { EventBus, WorkflowEvent } from "../queue/eventBus";
 import { WorkflowRepository } from "../storage/workflowRepository";
 import { renderMetrics } from "../observability/metrics";
 import { requireApiKey } from "./auth";
+import { corsMiddleware } from "./cors";
 import { Step, Workflow } from "../types";
 
 type AsyncHandler = (req: Request, res: Response) => Promise<void>;
@@ -38,6 +39,7 @@ export function createApp(
 ): Express {
   const app = express();
   app.use(express.json());
+  app.use(corsMiddleware);
 
   // /metrics is deliberately outside both auth and rate limiting —
   // Prometheus scrapers hit it frequently and don't send app-level auth

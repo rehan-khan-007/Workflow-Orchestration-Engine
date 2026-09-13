@@ -226,6 +226,30 @@ scale. Reproduce with:
 DATABASE_URL=... REDIS_URL=... npm run benchmark:scaling
 ```
 
+## Live demo page
+
+`demo/index.html` is a single self-contained, dependency-free page —
+open it directly in a browser (no build step, no server needed for the
+page itself). Point it at your own running API (`start:api`), pick a
+preset DAG (linear chain / diamond / fan-out) or paste custom JSON, and
+watch it execute for real: a live SVG graph colored by each step's
+actual status, fed by the real `/workflows/:id/stream` SSE endpoint —
+not a canned recording.
+
+Two small backend additions exist specifically to support this:
+- **CORS** (`src/api/cors.ts`) — the API had none before; a demo page
+  opened as a local file (or served from anywhere else) is a different
+  origin than the API, so this is required for the page's `fetch()`
+  calls to succeed at all.
+- **`?api_key=` query-param auth fallback** (`src/api/auth.ts`) —
+  the browser's built-in `EventSource` API cannot set custom headers,
+  so it can't send `Authorization: Bearer ...` for the live stream.
+  This is a real, known browser limitation, not a design choice; the
+  tradeoff (a key in a URL can end up in logs/history, unlike a
+  header) is stated directly in the code comment. Acceptable for a
+  single-operator demo tool, not for a multi-tenant service handling
+  real secrets at scale.
+
 ## Running with Docker Compose
 
 ```bash

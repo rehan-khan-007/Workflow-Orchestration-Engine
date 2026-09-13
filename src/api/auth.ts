@@ -16,10 +16,22 @@ export function requireApiKey(apiKey: string | undefined): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.header("Authorization");
     const expected = `Bearer ${apiKey}`;
-    if (header !== expected) {
-      res.status(401).json({ error: "Missing or invalid API key" });
+    // Fallback: the browser's built-in EventSource API (used by
+    // GET /workflows/:id/stream) cannot set custom headers at all — this
+    // is a real, unavoidable browser API limitation, not a design choice
+    // here. A `?api_key=` query param is the standard workaround for
+    // exactly this problem in long-lived streaming connections. Real
+    // tradeoff, stated plainly: a key passed this way can end up in
+    // server access logs or browser history, which a header never
+    // would. Acceptable for this project's threat model (a single-
+    // operator demo/portfolio tool, not a multi-tenant service with
+    // untrusted users); would need reconsidering for anything handling
+    // real secrets at scale.
+    const queryKey = typeof req.query.api_key === "string" ? req.query.api_key : undefined;
+    if (header === expected || queryKey === apiKey) {
+      next();
       return;
     }
-    next();
+    res.status(401).json({ error: "Missing or invalid API key" });
   };
 }

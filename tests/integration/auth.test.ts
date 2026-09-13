@@ -80,6 +80,16 @@ describe("API key authentication", () => {
     expect(res.status).toBe(200);
   });
 
+  it("accepts a request authenticated via ?api_key= query param (EventSource can't set headers)", async () => {
+    const res = await fetch(`${baseUrl}/workflows?api_key=${apiKey}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("still rejects the wrong key when passed as a query param", async () => {
+    const res = await fetch(`${baseUrl}/workflows?api_key=wrong-key`);
+    expect(res.status).toBe(401);
+  });
+
   it("enforces auth on POST /workflows too, not just GET routes", async () => {
     const res = await fetch(`${baseUrl}/workflows`, {
       method: "POST",
