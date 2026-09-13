@@ -10,8 +10,10 @@ exact implementation detail.
 - **Not frozen — actively evolving.** This document was originally
   written after 11 build phases; a 12th (a live browser demo, plus the
   two small backend additions it required — CORS and an auth
-  query-param fallback) was added afterward and is reflected below.
-  Treat "release status" as a snapshot at time of writing, not a
+  query-param fallback) and a 13th (a real public deployment at
+  https://workflow-orchestration-engine.onrender.com/, via a new
+  `src/combined.ts` entrypoint) were added afterward and are reflected
+  below. Treat "release status" as a snapshot at time of writing, not a
   permanent claim — check `git log` for what's actually landed since.
 - Not CI/CD-gated — there is no `.github/workflows/` or other pipeline
   config in the repo. Tests are run manually (`npm test`).
@@ -202,6 +204,19 @@ engineering log — not generic advice.
     stated tradeoff: a key passed this way can land in server access
     logs or browser history, which a header never would.
 
+11. **`src/combined.ts` runs the API and one worker pool in a single
+    process — this is a deployment-specific exception, not the
+    system's real architecture.** It exists solely because the free
+    hosting tier used for the public demo
+    (https://workflow-orchestration-engine.onrender.com/) has no
+    background-worker option, only web services. The actual
+    distributed architecture — independent processes that survive
+    each other's crashes — is what `src/api/index.ts` +
+    `src/worker/main.ts` (run separately), the test suite (especially
+    `tests/integration/restartRecovery.test.ts`), and the `k8s/`
+    manifests all demonstrate. A reader should not infer the deployed
+    demo's process topology from its live URL.
+
 ## 6. Provenance — how this document was produced
 
 - Investigated a `.zip` snapshot of the repository uploaded on
@@ -307,6 +322,14 @@ documented in the repo:
   code calling this engine's REST API (or a shared library) to submit
   DAGs — nothing here currently does that, and nothing in this repo
   imports or references AgentOS.
+- **Infrastructure sharing (distinct from code integration, above):**
+  the public deployment's Redis instance is the *same* Upstash
+  database AgentOS uses, not a separate one — a free-tier constraint
+  (§5 invariant 11 area; one free database per Upstash account), not a
+  design choice. Isolated by key namespace (`QUEUE_NAME=woe-demo-queue`)
+  only, not by infrastructure. No code-level relationship exists
+  between the two projects from this — it's purely two unrelated
+  applications' transient queue data coexisting in the same store.
 
 ## 10. AI contributor guardrails
 
@@ -415,6 +438,7 @@ actual local ports.
 | `src/benchmarks/` | `dagGenerator.ts` (workload gen), `throughputBenchmark.ts`, `scalingExperiment.ts`, `speedupBenchmark.ts`, `failureRecoveryBenchmark.ts`, `report.ts` (runner) |
 | `scripts/cli.ts` | CLI (create/list/get/cancel/watch) |
 | `demo/index.html` | Self-contained live demo page — real SVG DAG viz over real SSE (§5 invariants 9, 10) |
+| `src/combined.ts` | Single-process API+worker entrypoint, deployment-specific only (§5 invariant 11) |
 | `docker/Dockerfile` | Multi-stage build → `api` and `worker` targets |
 | `docker-compose.yml` | Full local stack: redis, postgres, migrate (one-shot), api, worker |
 | `k8s/*.yaml` | Kubernetes manifests: `woe-api`, `woe-worker` Deployments + Postgres/Redis |

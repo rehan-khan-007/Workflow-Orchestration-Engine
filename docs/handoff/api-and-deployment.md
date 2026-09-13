@@ -173,3 +173,42 @@ itself — any reachable Postgres/Redis works, set via `DATABASE_URL` /
   JSON shapes the page's code parses. The two verification methods are
   complementary, not redundant — one confirms the network contract is
   correct, the other confirms the page actually renders it correctly.
+
+## Live public deployment (Phase 13)
+
+**https://workflow-orchestration-engine.onrender.com/** — real
+infrastructure, confirmed working end-to-end (a real workflow run
+through to `completed`, over the public internet), not a mock.
+
+- **Entrypoint**: `src/combined.ts`, not `src/api/index.ts` +
+  `src/worker/main.ts` run separately. See §5 invariant 11 in
+  MASTER.md for why this is a deployment-specific exception, not the
+  system's real architecture — Render's free tier has no
+  background-worker option, only web services, so API and worker run
+  in one process for this deployment only.
+- **Database**: a dedicated Neon Postgres project (free, does not
+  expire — unlike Render's own free Postgres, which self-deletes after
+  ~44 days). Requires `DATABASE_SSL=true` (`src/storage/db.ts`) since
+  Neon requires TLS and local dev Postgres does not.
+- **Queue/pub-sub**: Upstash Redis — but the *same* instance AgentOS
+  uses, not a separate one (Upstash's free tier allows one database
+  per account, and one was already in use for AgentOS). Isolated by
+  `QUEUE_NAME=woe-demo-queue`, not by infrastructure — see MASTER.md
+  §9 for the distinction between this (infra sharing) and the
+  separate, unrelated question of whether any *code* integration
+  exists between the two projects (it doesn't).
+- **Static demo serving**: `src/combined.ts` serves `demo/index.html`
+  directly via `express.static()` at `/`, so the public link is one
+  URL for both the demo UI and the API — not two separate ones. The
+  page's own JS auto-detects `window.location.origin` for this case
+  (falls back to `localhost:3000` when opened as a local file).
+- **Cold starts**: the free web service spins down after 15 minutes
+  of no traffic; the next visitor's first request takes roughly
+  30-60 seconds while it wakes. Normal, documented Render free-tier
+  behavior — not a bug in this codebase.
+- **Verification order, for the record**: the full chain (Neon +
+  Upstash + the combined entrypoint) was verified locally first — a
+  real workflow run from a developer machine against both real cloud
+  services — *before* Render was touched at all, then verified again
+  against the live public URL after deploying. Both steps produced a
+  real `"status":"completed"` response.
