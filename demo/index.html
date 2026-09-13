@@ -317,7 +317,7 @@
 <div class="controls">
   <div class="field">
     <label for="apiBase">API base URL</label>
-    <input type="text" id="apiBase" value="http://localhost:3000" />
+    <input type="text" id="apiBase" />
   </div>
   <div class="field">
     <label for="apiKey">API key (optional)</label>
@@ -655,6 +655,18 @@
   }
 
   runBtn.addEventListener("click", runWorkflow);
+
+  // Default the API base URL to wherever this page is actually being
+  // served from — the common case once this is deployed alongside the
+  // API (see src/combined.ts, which serves this file itself). Falls
+  // back to localhost:3000 when the page is opened as a local file
+  // (window.location.origin is "null" or "file://" in that case, not a
+  // usable HTTP origin) — the original local-dev workflow.
+  (function setDefaultApiBase() {
+    const origin = window.location.origin;
+    const isUsableHttpOrigin = origin && /^https?:\/\//.test(origin);
+    apiBaseInput.value = isUsableHttpOrigin ? origin : "http://localhost:3000";
+  })();
 
   // initial preview
   renderStaticPreview(PRESETS.linear.steps);

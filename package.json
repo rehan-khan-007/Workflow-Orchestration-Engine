@@ -10,6 +10,7 @@
     "migrate": "ts-node src/storage/migrate.ts",
     "start:api": "ts-node src/api/index.ts",
     "start:worker": "ts-node src/worker/main.ts",
+    "start:combined": "ts-node src/combined.ts",
     "cli": "ts-node scripts/cli.ts",
     "benchmark": "ts-node src/benchmarks/report.ts",
     "benchmark:scaling": "ts-node src/benchmarks/scalingExperiment.ts",
