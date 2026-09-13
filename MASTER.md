@@ -7,9 +7,12 @@ exact implementation detail.
 
 ## 1. Release status
 
-- **Frozen at last verification** (see §6 Provenance for what "verified"
-  means here): all 11 planned build phases complete. No feature work is
-  in progress as of this document.
+- **Not frozen — actively evolving.** This document was originally
+  written after 11 build phases; a 12th (a live browser demo, plus the
+  two small backend additions it required — CORS and an auth
+  query-param fallback) was added afterward and is reflected below.
+  Treat "release status" as a snapshot at time of writing, not a
+  permanent claim — check `git log` for what's actually landed since.
 - Not CI/CD-gated — there is no `.github/workflows/` or other pipeline
   config in the repo. Tests are run manually (`npm test`).
 - No version tag / release exists in the repo (no `.git` history was
@@ -183,6 +186,22 @@ engineering log — not generic advice.
    each replica's memory only knows about the steps it personally
    touched.
 
+9. **CORS is enabled globally, permissively** (`src/api/cors.ts`,
+   `Access-Control-Allow-Origin: *`) — deliberate, not an oversight: this
+   API has no cookie-based session to protect against CSRF, and a bearer
+   token (when `API_KEY` is set) is never sent automatically by a
+   browser, so an open CORS policy doesn't weaken that auth. Correct for
+   a single-operator demo/portfolio tool; would need reconsidering
+   before use in a multi-tenant service with user sessions.
+
+10. **`GET /workflows/:id/stream` accepts `?api_key=` as an alternate to
+    the `Authorization` header** (`src/api/auth.ts`) — not a weaker
+    parallel auth scheme by accident, but the only way to authenticate
+    this specific route at all from a browser: the built-in
+    `EventSource` API cannot set custom headers, full stop. Real,
+    stated tradeoff: a key passed this way can land in server access
+    logs or browser history, which a header never would.
+
 ## 6. Provenance — how this document was produced
 
 - Investigated a `.zip` snapshot of the repository uploaded on
@@ -198,8 +217,10 @@ engineering log — not generic advice.
   NOT FROM COMMIT HISTORY` for anything historical.
 - `npm install` + `npm test` were actually re-run against a freshly
   installed Postgres 16 and Redis 7 in the investigation environment:
-  **102/102 tests passed.** This is directly verified, not taken on
-  faith from the README.
+  **102/102 tests passed** at the time of this original investigation
+  (now 107/107 after Phase 12's additions — see §7 for the current
+  count). Directly verified either way, not taken on faith from the
+  README.
 - Table/column existence (`workflows`, `steps`, `step_executions`,
   `dead_letters`) was checked directly via `psql \d`, not assumed from
   `schema.sql` alone (though in this case they matched).
@@ -212,21 +233,34 @@ engineering log — not generic advice.
 - Benchmark numbers (§4) are `NOT VERIFIED` by this document's
   author — taken from the repo's own committed results, not
   re-executed here.
+- **Phase 12 (CORS, the `?api_key=` fallback, `demo/index.html`) has
+  stronger provenance than the rest of this document**: unlike the
+  original snapshot-based investigation, this addition was verified by
+  starting real API + worker processes and driving the exact HTTP/SSE
+  calls the demo page makes via `curl` — confirming the real
+  `Access-Control-Allow-Origin` header, the real SSE event shapes, and
+  the query-param auth path against a live `API_KEY`-protected
+  instance. The page's actual rendering in a browser was confirmed
+  separately by the project's developer, not by this document's
+  author, who cannot open a browser.
 
 ## 7. Security & testing summary
 
-- **Auth:** optional API-key (`Authorization: Bearer <API_KEY>`),
-  off by default (`src/api/auth.ts`, `src/config.ts`). No OAuth, no
-  RBAC, no multi-tenancy — single shared key model only.
+- **Auth:** optional API-key (`Authorization: Bearer <API_KEY>`, or
+  `?api_key=` for `GET /workflows/:id/stream` specifically — §5
+  invariant 10), off by default (`src/api/auth.ts`, `src/config.ts`).
+  No OAuth, no RBAC, no multi-tenancy — single shared key model only.
+- **CORS:** enabled globally, all origins (`src/api/cors.ts`) — §5
+  invariant 9 for why this is a deliberate choice, not an oversight.
 - **Rate limiting:** `express-rate-limit`, 100 req/min/IP default,
   always on regardless of `API_KEY` (`src/api/server.ts`).
-- **Testing:** 102 tests across 14 files, **verified passing** in this
+- **Testing:** 107 tests across 15 files, **verified passing** in this
   investigation (not just claimed). Split: unit tests
   (`tests/unit/`: coordinator, leaseManager, reaper, validation,
   logger — no DB/Redis needed except where the component itself is
   Redis-backed) and integration tests (`tests/integration/`: real
-  Postgres + Redis + real HTTP, including `auth.test.ts` and
-  `logging.test.ts`).
+  Postgres + Redis + real HTTP, including `auth.test.ts`,
+  `cors.test.ts`, and `logging.test.ts`).
 - **No CI/CD**: no `.github/workflows` or equivalent exists in this
   snapshot — tests are a manual `npm test` run, not gated on push/PR.
 - **No dependency-vulnerability tracking** beyond what `npm audit`
@@ -309,6 +343,20 @@ documented in the repo:
    — it is deliberately exempt (§5 invariant 7); adding auth to it
    without updating the Prometheus scrape config (which sends no auth
    header) breaks metrics collection silently.
+8. **Do not remove or restrict the global CORS policy
+   (`src/api/cors.ts`) without checking `demo/index.html`'s use case
+   first** — it's the reason the demo page can call the API at all
+   from a different origin (§5 invariant 9). A well-intentioned
+   "lock down CORS to known origins" change will silently break the
+   demo unless the new origin list is kept in sync with wherever the
+   demo page is actually opened from (which varies — it's a local
+   file, not a fixed URL).
+9. **Do not remove the `?api_key=` query-param fallback in
+   `requireApiKey()`** on the assumption that header-only auth is
+   strictly better — for `GET /workflows/:id/stream` specifically, it
+   is the *only* way a browser can authenticate at all (§5 invariant
+   10). Removing it breaks the live demo the moment `API_KEY` is set,
+   not just weakens it.
 
 ## 11. Local development / quickstart
 
@@ -359,16 +407,18 @@ actual local ports.
 | `src/queue/producer.ts` / `consumer.ts` | Redis list-based queue (`BRPOP`) |
 | `src/queue/eventBus.ts` | Redis Pub/Sub for live status → SSE |
 | `src/api/server.ts` | Express app: routes, auth + rate-limit middleware wiring |
-| `src/api/auth.ts` | API-key middleware (§5 invariant 7, §7) |
+| `src/api/auth.ts` | API-key middleware (§5 invariants 7, 10; §7) |
+| `src/api/cors.ts` | Global CORS middleware (§5 invariant 9) |
 | `src/api/index.ts` | API process entrypoint |
 | `src/observability/metrics.ts` | All Prometheus counters/histograms/gauges (§5 invariant 8) |
 | `src/observability/logger.ts` | Structured JSON logger, suppressed under `NODE_ENV=test` |
 | `src/benchmarks/` | `dagGenerator.ts` (workload gen), `throughputBenchmark.ts`, `scalingExperiment.ts`, `speedupBenchmark.ts`, `failureRecoveryBenchmark.ts`, `report.ts` (runner) |
 | `scripts/cli.ts` | CLI (create/list/get/cancel/watch) |
+| `demo/index.html` | Self-contained live demo page — real SVG DAG viz over real SSE (§5 invariants 9, 10) |
 | `docker/Dockerfile` | Multi-stage build → `api` and `worker` targets |
 | `docker-compose.yml` | Full local stack: redis, postgres, migrate (one-shot), api, worker |
 | `k8s/*.yaml` | Kubernetes manifests: `woe-api`, `woe-worker` Deployments + Postgres/Redis |
 | `tests/unit/` | `coordinator.test.ts`, `leaseManager.test.ts`, `reaper.test.ts`, `validation.test.ts`, `logger.test.ts` |
-| `tests/integration/` | `api.test.ts`, `auth.test.ts`, `engine.test.ts`, `faultTolerance.test.ts`, `logging.test.ts`, `reliability.test.ts`, `restartRecovery.test.ts`, `scheduler.test.ts`, `workflowRepository.test.ts` |
+| `tests/integration/` | `api.test.ts`, `auth.test.ts`, `cors.test.ts`, `engine.test.ts`, `faultTolerance.test.ts`, `logging.test.ts`, `reliability.test.ts`, `restartRecovery.test.ts`, `scheduler.test.ts`, `workflowRepository.test.ts` |
 
 See `docs/handoff/` for deeper detail on each subsystem.

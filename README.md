@@ -32,10 +32,10 @@ npm test
 
 ## Status
 
-All 11 planned phases complete — persistence, real parallel execution,
+All 12 phases complete — persistence, real parallel execution,
 fault tolerance, a REST API + CLI, containerized + Kubernetes deployment,
 measured benchmarks (including worker-scaling), observability (metrics +
-structured logs), and auth + rate limiting.
+structured logs), auth + rate limiting, and a live browser demo.
 
 - [x] Phase 1 — PostgreSQL persistence (`src/storage/`): workflows, steps, and
       idempotent step-execution tracking. Engine state is now durable, not in-memory.
@@ -75,14 +75,14 @@ structured logs), and auth + rate limiting.
       nonexistent steps, self-dependencies, and dependency cycles are all
       rejected with a 400 and a specific error message, instead of being
       accepted and failing (or hanging) later during dispatch.
-- 102 automated tests across 14 files (`npm test`): unit tests for DAG
+- 107 automated tests across 15 files (`npm test`): unit tests for DAG
       dispatch logic, lease acquisition/expiry/atomic renewal, the
       crash-detection reaper, DAG validation, and the structured logger
       (all fast, no DB/Redis needed except where the component itself is
       Redis-backed); integration tests exercising the real engine
       end-to-end through Postgres, Redis, and real HTTP — including a
-      real end-to-end structured-logging trace and API-key/rate-limit
-      behavior against a real running server.
+      real end-to-end structured-logging trace, API-key/rate-limit
+      behavior, and CORS behavior against a real running server.
 - [x] Phase 7 — Correctness hardening: an explicit `queued` state
       (dispatched-but-not-yet-picked-up) distinct from `running`
       (a worker is actively executing it) — `src/worker/pool.ts` marks
@@ -148,6 +148,18 @@ structured logs), and auth + rate limiting.
       default), also exempting `/metrics` since Prometheus scrapes it
       frequently from trusted infra. Verified against the real running
       API process, not just in tests.
+- [x] Phase 12 — Live browser demo (`demo/index.html`): a single
+      self-contained, dependency-free page — a real SVG DAG graph
+      driven by the real `/workflows/:id/stream` SSE endpoint, not a
+      recording. Required two small, real backend additions, both
+      tested: CORS (`src/api/cors.ts` — didn't exist before; a page on
+      a different origin needs it for `fetch()` to work at all) and a
+      `?api_key=` query-param auth fallback (`src/api/auth.ts`) — the
+      browser's built-in `EventSource` API cannot set custom headers,
+      so it can't send a bearer token; this is a real, documented
+      browser limitation, not a design shortcut. Confirmed working
+      against real running API + worker processes, both via `curl`
+      (every request/response/event shape) and in an actual browser.
 
 ## Authentication
 
@@ -158,7 +170,13 @@ curl http://localhost:3000/workflows -H "Authorization: Bearer your-secret-here"
 ```
 `GET /metrics` is always exempt (Prometheus scrapers don't send app-level
 auth headers by default). Rate limiting is always on regardless of
-`API_KEY` (100 requests/minute per IP by default).
+`API_KEY` (100 requests/minute per IP by default). The stream endpoint
+(`GET /workflows/:id/stream`) also accepts the key as `?api_key=...` —
+the browser's `EventSource` API cannot set custom headers at all, so a
+header-only scheme would make the live demo (`demo/index.html`)
+unusable the moment `API_KEY` is set. Real tradeoff, stated plainly: a
+key passed this way can end up in server access logs or browser
+history, which a header never would.
 
 ## Observability
 

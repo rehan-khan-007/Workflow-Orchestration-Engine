@@ -9,11 +9,12 @@ re-verified against a live Postgres + Redis before being committed.
 
 ## Scale, for context
 
-- 2,206 lines of source code across 29 files
-- 2,161 lines of test code — 102 tests, all passing, across 14 test files
-- 11 phases taking the project from an in-memory skeleton to a
+- 2,243 lines of source code across 30 files
+- 2,243 lines of test code — 107 tests, all passing, across 15 test files
+- 12 phases taking the project from an in-memory skeleton to a
   Postgres-backed, Redis-parallel, fault-tolerant, containerized,
   Kubernetes-deployed, benchmarked, observable, authenticated system
+  with a real browser-based live demo
 
 ## Bugs found and fixed
 
